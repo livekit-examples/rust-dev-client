@@ -3,4 +3,22 @@ name = "rust-dev-client"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+tracing = ["console-subscriber", "tokio/tracing"]
+
 [dependencies]
+console-subscriber = { version = "0.1", features = ["parking_lot"], optional = true }
+eframe = { version = "0.33.3", features = ["default_fonts", "wgpu", "persistence"] }
+egui = "0.33.3"
+egui-wgpu = "0.33.3"
+env_logger = "0.11"
+futures = "0.3"
+image = "0.25"
+livekit = { version = "0.7.45", features = ["rustls-tls-native-roots"] }
+log = "0.4"
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full", "parking_lot"] }
+wgpu = "28.0"
+winit = { version = "0.30.12", features = [ "android-native-activity" ] }
