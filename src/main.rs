@@ -15,9 +15,6 @@ mod video_renderer;
 fn main() {
     env_logger::init();
 
-    #[cfg(feature = "tracing")]
-    console_subscriber::init();
-
     // Create a background thread which checks for deadlocks every 10s
     thread::spawn(move || {
         loop {
