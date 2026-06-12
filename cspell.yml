@@ -7,6 +7,8 @@ dictionaries:
   - rust
 words:
   - abgr
+  - codegen
+  - debuginfo
   - deque
   - eframe
   - egui
