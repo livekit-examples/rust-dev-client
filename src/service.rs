@@ -155,7 +155,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 let mut options = RoomOptions::default();
                 options.auto_subscribe = auto_subscribe;
-                options.e2ee = e2ee;
+                options.encryption = e2ee;
 
                 let res = Room::connect(&url, &token, options).await;
 

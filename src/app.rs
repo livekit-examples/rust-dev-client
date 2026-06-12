@@ -162,7 +162,7 @@ impl LkApp {
     }
 
     fn top_panel(&mut self, ui: &mut egui::Ui) {
-        egui::menu::bar(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Simulate", |ui| {
                 let scenarios = [
                     SimulateScenario::SignalReconnect,
@@ -451,7 +451,7 @@ impl LkApp {
                     } else {
                         for _ in 0..5 {
                             ui.video_frame(|ui| {
-                                egui::Frame::none()
+                                egui::Frame::new()
                                     .fill(ui.style().visuals.code_bg_color)
                                     .show(ui, |ui| {
                                         ui.allocate_space(ui.available_size());

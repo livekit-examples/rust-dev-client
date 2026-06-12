@@ -64,8 +64,10 @@ impl VideoGrid {
         ui.ctx()
             .check_for_id_clash(self.id, self.available_rect, "VideoGrid");
 
-        ui.allocate_ui_at_rect(self.available_rect, |ui| {
-            ui.set_visible(!is_first_frame);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(self.available_rect), |ui| {
+            if is_first_frame {
+                ui.set_invisible();
+            }
 
             let mut ctx = VideoGridContext {
                 layout: &mut self,
@@ -169,7 +171,9 @@ impl<'a> VideoGridContext<'a> {
         let frame_rect = self.layout.next_frame_rect();
 
         if self.ui.is_visible() {
-            let mut child_ui = self.ui.child_ui(frame_rect, egui::Layout::default(), None);
+            let mut child_ui = self
+                .ui
+                .new_child(egui::UiBuilder::new().max_rect(frame_rect).layout(egui::Layout::default()));
             add_contents(&mut child_ui);
         }
 
