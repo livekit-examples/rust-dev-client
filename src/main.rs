@@ -11,28 +11,11 @@ mod service;
 mod sine_track;
 mod video_grid;
 mod video_renderer;
+mod utils;
 
 fn main() {
     env_logger::init();
-
-    // Create a background thread which checks for deadlocks every 10s
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(10));
-            let deadlocks = deadlock::check_deadlock();
-            if deadlocks.is_empty() {
-                continue;
-            }
-
-            log::error!("{} deadlocks detected", deadlocks.len());
-            for (i, threads) in deadlocks.iter().enumerate() {
-                log::error!("Deadlock #{}", i);
-                for t in threads {
-                    log::error!("Thread Id {:#?}: \n{:#?}", t.thread_id(), t.backtrace());
-                }
-            }
-        }
-    });
+    utils::watch_for_deadlocks();
 
     eframe::run_native(
         "LiveKit Client",
@@ -41,7 +24,7 @@ fn main() {
             renderer: Renderer::Wgpu,
             ..Default::default()
         },
-        Box::new(|cc| Ok(Box::new(app::AppRoot::new(cc)))),
+        Box::new(|context| Ok(Box::new(app::AppRoot::new(context)))),
     )
     .unwrap();
 }
