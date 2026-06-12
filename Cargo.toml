@@ -15,7 +15,7 @@ log = "0.4"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full", "parking_lot"] }
-wgpu = "28.0"
+wgpu = "29.0"
 winit = { version = "0.30.12", features = [ "android-native-activity" ] }
 livekit = { version = "0.7.45", features = ["rustls-tls-native-roots"] }
 
