@@ -9,7 +9,7 @@ default = []
 tracing = ["console-subscriber", "tokio/tracing"]
 
 [dependencies]
-console-subscriber = { version = "0.1", features = ["parking_lot"], optional = true }
+console-subscriber = { version = "0.5", features = ["parking_lot"], optional = true }
 eframe = { version = "0.33.3", features = ["default_fonts", "wgpu", "persistence"] }
 egui = "0.33.3"
 egui-wgpu = "0.33.3"
