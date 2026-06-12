@@ -13,6 +13,7 @@ const RESPONSE_PREVIEW_CHARS: usize = 40;
 
 static NEXT_SEND_ID: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Default)]
 pub struct RpcUiState {
     send_destination: Option<ParticipantIdentity>,
     send_method: String,
@@ -46,20 +47,6 @@ enum SendResult {
     Err { code: u32, message: String },
 }
 
-impl Default for RpcUiState {
-    fn default() -> Self {
-        Self {
-            send_destination: None,
-            send_method: String::new(),
-            send_payload: String::new(),
-            send_in_flight: None,
-            send_result: None,
-            register_method: String::new(),
-            register_error: None,
-            handlers: BTreeMap::new(),
-        }
-    }
-}
 
 impl RpcUiState {
     pub fn handle_send_result(&mut self, request_id: u64, result: Result<String, RpcError>) {
@@ -97,11 +84,10 @@ impl RpcUiState {
         let mut idents: Vec<ParticipantIdentity> = participants.keys().cloned().collect();
         idents.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
-        if let Some(sel) = self.send_destination.as_ref() {
-            if !participants.contains_key(sel) {
+        if let Some(sel) = self.send_destination.as_ref()
+            && !participants.contains_key(sel) {
                 self.send_destination = None;
             }
-        }
 
         ui.horizontal(|ui| {
             ui.label("To:");
@@ -332,7 +318,7 @@ impl RpcUiState {
 
 fn push_invocation(entry: &mut HandlerEntry, data: &RpcInvocationData) {
     entry.invocation_count += 1;
-    let payload_len = data.payload.as_bytes().len();
+    let payload_len = data.payload.len();
     let payload_preview = truncate_chars(&data.payload, PAYLOAD_PREVIEW_CHARS);
     entry.invocations.push_back(Invocation {
         n: entry.invocation_count,
@@ -357,7 +343,7 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 }
 
 fn preview_response(s: &str) -> String {
-    let bytes = s.as_bytes().len();
+    let bytes = s.len();
     let mut iter = s.chars();
     let head: String = iter.by_ref().take(RESPONSE_PREVIEW_CHARS).collect();
     if iter.next().is_some() {

@@ -610,8 +610,8 @@ impl egui::Widget for DataTrackChart<'_> {
             Stroke::new(1.0, guide_color),
         );
 
-        if let Some(value) = &mut drag_value {
-            if let Some(pointer_pos) = response.interact_pointer_pos() {
+        if let Some(value) = &mut drag_value
+            && let Some(pointer_pos) = response.interact_pointer_pos() {
                 let from_screen = to_screen.inverse();
                 let logical = from_screen * pointer_pos;
                 let new_val = (logical.y as i32).clamp(0, MAX_VALUE as i32);
@@ -620,7 +620,6 @@ impl egui::Widget for DataTrackChart<'_> {
                     response.mark_changed();
                 }
             }
-        }
 
         let now = std::time::Instant::now();
         let mut points = self.points.lock();
