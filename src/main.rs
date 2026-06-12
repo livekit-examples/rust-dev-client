@@ -41,7 +41,7 @@ fn main() {
             renderer: Renderer::Wgpu,
             ..Default::default()
         },
-        Box::new(|cc| Ok(Box::new(app::LkApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(app::AppRoot::new(cc)))),
     )
     .unwrap();
 }

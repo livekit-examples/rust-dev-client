@@ -7,11 +7,13 @@ use crate::{
 };
 use egui::{Color32, CornerRadius, Rect, Stroke, emath, epaint, pos2};
 use livekit::{SimulateScenario, e2ee::EncryptionType, prelude::*, track::VideoQuality};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// The state of the application are saved on app exit and restored on app start.
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 struct AppState {
     url: String,
@@ -19,26 +21,6 @@ struct AppState {
     key: String,
     auto_subscribe: bool,
     enable_e2ee: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RightTab {
-    Participants,
-    Rpc,
-}
-
-pub struct LkApp {
-    async_runtime: tokio::runtime::Runtime,
-    state: AppState,
-    video_renderers: HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
-    local_data_tracks: Vec<LocalDataTrackTile>,
-    remote_data_tracks: Vec<RemoteDataTrackTile>,
-    connecting: bool,
-    connection_failure: Option<String>,
-    render_state: egui_wgpu::RenderState,
-    service: LkService,
-    rpc_ui: RpcUiState,
-    right_tab: RightTab,
 }
 
 impl Default for AppState {
@@ -53,28 +35,49 @@ impl Default for AppState {
     }
 }
 
-impl LkApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let state = cc
-            .storage
-            .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
-            .unwrap_or_default();
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RightTab {
+    Participants,
+    Rpc,
+}
 
-        let async_runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+/// State and UI of a single window, each with its own room connection.
+struct ConnectionView {
+    window_id: u64,
+    runtime: tokio::runtime::Handle,
+    spawn_requests: Arc<AtomicUsize>,
+    state: AppState,
+    video_renderers: HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
+    local_data_tracks: Vec<LocalDataTrackTile>,
+    remote_data_tracks: Vec<RemoteDataTrackTile>,
+    connecting: bool,
+    connection_failure: Option<String>,
+    render_state: egui_wgpu::RenderState,
+    service: LkService,
+    rpc_ui: RpcUiState,
+    right_tab: RightTab,
+}
 
+impl ConnectionView {
+    fn new(
+        window_id: u64,
+        runtime: tokio::runtime::Handle,
+        render_state: egui_wgpu::RenderState,
+        state: AppState,
+        spawn_requests: Arc<AtomicUsize>,
+    ) -> Self {
         Self {
-            service: LkService::new(async_runtime.handle()),
-            async_runtime,
+            service: LkService::new(&runtime),
+            window_id,
+            runtime,
+            spawn_requests,
             state,
             video_renderers: HashMap::new(),
             local_data_tracks: Vec::new(),
             remote_data_tracks: Vec::new(),
             connecting: false,
             connection_failure: None,
-            render_state: cc.wgpu_render_state.clone().unwrap(),
+            render_state,
             rpc_ui: RpcUiState::default(),
             right_tab: RightTab::Participants,
         }
@@ -107,7 +110,7 @@ impl LkApp {
                     } => {
                         if let RemoteTrack::Video(ref video_track) = track {
                             let video_renderer = VideoRenderer::new(
-                                self.async_runtime.handle(),
+                                &self.runtime,
                                 self.render_state.clone(),
                                 video_track.rtc_track(),
                             );
@@ -130,7 +133,7 @@ impl LkApp {
                     } => {
                         if let LocalTrack::Video(ref video_track) = track {
                             let video_renderer = VideoRenderer::new(
-                                self.async_runtime.handle(),
+                                &self.runtime,
                                 self.render_state.clone(),
                                 video_track.rtc_track(),
                             );
@@ -147,7 +150,7 @@ impl LkApp {
                     }
                     RoomEvent::DataTrackPublished(track) => {
                         self.remote_data_tracks
-                            .push(RemoteDataTrackTile::new(self.async_runtime.handle(), track));
+                            .push(RemoteDataTrackTile::new(&self.runtime, track));
                     }
                     RoomEvent::Disconnected { reason: _ } => {
                         self.video_renderers.clear();
@@ -163,6 +166,12 @@ impl LkApp {
 
     fn top_panel(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("New Window").clicked() {
+                    self.spawn_requests.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+
             ui.menu_button("Simulate", |ui| {
                 let scenarios = [
                     SimulateScenario::SignalReconnect,
@@ -413,72 +422,73 @@ impl LkApp {
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            VideoGrid::new("default_grid")
-                .max_columns(6)
-                .show(ui, |ui| {
-                    if connected {
-                        let room = room.as_ref().unwrap();
+        egui::ScrollArea::vertical()
+            .id_salt(("central_scroll", self.window_id))
+            .show(ui, |ui| {
+                VideoGrid::new(("default_grid", self.window_id))
+                    .max_columns(6)
+                    .show(ui, |ui| {
+                        if connected {
+                            let room = room.as_ref().unwrap();
 
-                        for ((participant_id, _), video_renderer) in &self.video_renderers {
-                            ui.video_frame(|ui| {
-                                if let Some(p) = room.remote_participants().get(participant_id) {
-                                    draw_video(
-                                        p.name().as_str(),
-                                        p.is_speaking(),
-                                        video_renderer,
-                                        ui,
-                                    );
-                                } else {
-                                    let lp = room.local_participant();
-                                    draw_video(
-                                        lp.name().as_str(),
-                                        lp.is_speaking(),
-                                        video_renderer,
-                                        ui,
-                                    );
-                                }
-                            });
-                        }
+                            for ((participant_id, _), video_renderer) in &self.video_renderers {
+                                ui.video_frame(|ui| {
+                                    if let Some(p) = room.remote_participants().get(participant_id)
+                                    {
+                                        draw_video(
+                                            p.name().as_str(),
+                                            p.is_speaking(),
+                                            video_renderer,
+                                            ui,
+                                        );
+                                    } else {
+                                        let lp = room.local_participant();
+                                        draw_video(
+                                            lp.name().as_str(),
+                                            lp.is_speaking(),
+                                            video_renderer,
+                                            ui,
+                                        );
+                                    }
+                                });
+                            }
 
-                        for tile in &mut self.local_data_tracks {
-                            ui.video_frame(|ui| draw_local_data_track(tile, ui));
-                        }
+                            for tile in &mut self.local_data_tracks {
+                                ui.video_frame(|ui| draw_local_data_track(tile, ui));
+                            }
 
-                        for tile in &self.remote_data_tracks {
-                            ui.video_frame(|ui| draw_remote_data_track(tile, ui));
+                            for tile in &self.remote_data_tracks {
+                                ui.video_frame(|ui| draw_remote_data_track(tile, ui));
+                            }
+                        } else {
+                            for _ in 0..5 {
+                                ui.video_frame(|ui| {
+                                    egui::Frame::new()
+                                        .fill(ui.style().visuals.code_bg_color)
+                                        .show(ui, |ui| {
+                                            ui.allocate_space(ui.available_size());
+                                        });
+                                });
+                            }
                         }
-                    } else {
-                        for _ in 0..5 {
-                            ui.video_frame(|ui| {
-                                egui::Frame::new()
-                                    .fill(ui.style().visuals.code_bg_color)
-                                    .show(ui, |ui| {
-                                        ui.allocate_space(ui.available_size());
-                                    });
-                            });
-                        }
-                    }
-                })
-        });
+                    })
+            });
     }
 }
 
-impl eframe::App for LkApp {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, &self.state);
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl ConnectionView {
+    /// Panel ids are salted with the window id: all viewports share a single
+    /// egui::Context, so unsalted ids would share state across windows.
+    fn show_inside(&mut self, ui: &mut egui::Ui) {
         if let Some(event) = self.service.try_recv() {
             self.event(event);
         }
 
-        egui::Panel::top("top_panel").show_inside(ui, |ui| {
+        egui::Panel::top(egui::Id::new(("top_panel", self.window_id))).show_inside(ui, |ui| {
             self.top_panel(ui);
         });
 
-        egui::Panel::left("left_panel")
+        egui::Panel::left(egui::Id::new(("left_panel", self.window_id)))
             .resizable(true)
             .size_range(20.0..=360.0)
             .show_inside(ui, |ui| {
@@ -492,7 +502,7 @@ impl eframe::App for LkApp {
             self.bottom_panel(ui);
         });*/
 
-        egui::Panel::right("right_panel")
+        egui::Panel::right(egui::Id::new(("right_panel", self.window_id)))
             .resizable(true)
             .size_range(20.0..=360.0)
             .show_inside(ui, |ui| {
@@ -504,6 +514,107 @@ impl eframe::App for LkApp {
         });
 
         ui.ctx().request_repaint();
+    }
+}
+
+/// A window opened via File > New Window, shown as a deferred viewport.
+struct WindowEntry {
+    id: u64,
+    open: Arc<AtomicBool>,
+    view: Arc<Mutex<ConnectionView>>,
+}
+
+pub struct AppRoot {
+    async_runtime: tokio::runtime::Runtime,
+    render_state: egui_wgpu::RenderState,
+    spawn_requests: Arc<AtomicUsize>,
+    next_window_id: u64,
+    main_view: ConnectionView,
+    windows: Vec<WindowEntry>,
+}
+
+impl AppRoot {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let state = cc
+            .storage
+            .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
+            .unwrap_or_default();
+
+        let async_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let render_state = cc.wgpu_render_state.clone().unwrap();
+        let spawn_requests = Arc::new(AtomicUsize::new(0));
+
+        Self {
+            main_view: ConnectionView::new(
+                0,
+                async_runtime.handle().clone(),
+                render_state.clone(),
+                state,
+                spawn_requests.clone(),
+            ),
+            async_runtime,
+            render_state,
+            spawn_requests,
+            next_window_id: 1,
+            windows: Vec::new(),
+        }
+    }
+}
+
+impl eframe::App for AppRoot {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &self.main_view.state);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        for _ in 0..self.spawn_requests.swap(0, Ordering::Relaxed) {
+            let id = self.next_window_id;
+            self.next_window_id += 1;
+            self.windows.push(WindowEntry {
+                id,
+                open: Arc::new(AtomicBool::new(true)),
+                view: Arc::new(Mutex::new(ConnectionView::new(
+                    id,
+                    self.async_runtime.handle().clone(),
+                    self.render_state.clone(),
+                    self.main_view.state.clone(),
+                    self.spawn_requests.clone(),
+                ))),
+            });
+        }
+
+        self.windows.retain(|window| {
+            let open = window.open.load(Ordering::Relaxed);
+            if !open {
+                // Dropping LkService alone doesn't close the room; disconnect first.
+                let _ = window.view.lock().service.send(AsyncCmd::RoomDisconnect);
+            }
+            open
+        });
+
+        // Deferred viewports must be re-declared every frame to stay open.
+        for window in &self.windows {
+            let view = window.view.clone();
+            let open = window.open.clone();
+            ui.ctx().show_viewport_deferred(
+                egui::ViewportId::from_hash_of(("lk_window", window.id)),
+                egui::ViewportBuilder::default()
+                    .with_title(format!("LiveKit Client {}", window.id + 1))
+                    .with_inner_size([800.0, 600.0]),
+                move |ui, _class| {
+                    view.lock().show_inside(ui);
+                    if ui.input(|i| i.viewport().close_requested()) {
+                        open.store(false, Ordering::Relaxed);
+                    }
+                },
+            );
+        }
+
+        self.main_view.show_inside(ui);
     }
 }
 
