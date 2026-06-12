@@ -3,10 +3,10 @@ use crate::{
     sine_track::{SineParameters, SineTrack},
 };
 use livekit::{
-    e2ee::{key_provider::*, E2eeOptions, EncryptionType},
+    SimulateScenario,
+    e2ee::{E2eeOptions, EncryptionType, key_provider::*},
     prelude::*,
     track::VideoQuality,
-    SimulateScenario,
 };
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -14,27 +14,56 @@ use tokio::sync::mpsc::{self, error::SendError};
 
 #[derive(Debug)]
 pub enum AsyncCmd {
-    RoomConnect { url: String, token: String, auto_subscribe: bool, enable_e2ee: bool, key: String },
+    RoomConnect {
+        url: String,
+        token: String,
+        auto_subscribe: bool,
+        enable_e2ee: bool,
+        key: String,
+    },
     RoomDisconnect,
-    SimulateScenario { scenario: SimulateScenario },
+    SimulateScenario {
+        scenario: SimulateScenario,
+    },
     ToggleLogo,
     ToggleSine,
     ToggleDataTrack,
-    SubscribeTrack { publication: RemoteTrackPublication },
-    UnsubscribeTrack { publication: RemoteTrackPublication },
-    SetVideoQuality { publication: RemoteTrackPublication, quality: VideoQuality },
+    SubscribeTrack {
+        publication: RemoteTrackPublication,
+    },
+    UnsubscribeTrack {
+        publication: RemoteTrackPublication,
+    },
+    SetVideoQuality {
+        publication: RemoteTrackPublication,
+        quality: VideoQuality,
+    },
     E2eeKeyRatchet,
     LogStats,
-    RpcSendRequest { destination: String, method: String, payload: String, request_id: u64 },
+    RpcSendRequest {
+        destination: String,
+        method: String,
+        payload: String,
+        request_id: u64,
+    },
 }
 
 #[derive(Debug)]
 pub enum UiCmd {
-    ConnectResult { result: RoomResult<()> },
-    RoomEvent { event: RoomEvent },
-    DataTrackPublished { track: LocalDataTrack },
+    ConnectResult {
+        result: RoomResult<()>,
+    },
+    RoomEvent {
+        event: RoomEvent,
+    },
+    DataTrackPublished {
+        track: LocalDataTrack,
+    },
     DataTrackUnpublished,
-    RpcSendResult { request_id: u64, result: Result<String, RpcError> },
+    RpcSendResult {
+        request_id: u64,
+        result: Result<String, RpcError>,
+    },
 }
 
 /// AppService is the "asynchronous" part of our application, where we connect to a room and
@@ -58,10 +87,19 @@ impl LkService {
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
-        let inner = Arc::new(ServiceInner { ui_tx, room: Default::default() });
+        let inner = Arc::new(ServiceInner {
+            ui_tx,
+            room: Default::default(),
+        });
         let handle = async_handle.spawn(service_task(inner.clone(), cmd_rx));
 
-        Self { cmd_tx, ui_rx, handle, inner, runtime: async_handle.clone() }
+        Self {
+            cmd_tx,
+            ui_rx,
+            handle,
+            inner,
+            runtime: async_handle.clone(),
+        }
     }
 
     pub fn room(&self) -> Option<Arc<Room>> {
@@ -99,13 +137,21 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
     while let Some(event) = cmd_rx.recv().await {
         match event {
-            AsyncCmd::RoomConnect { url, token, auto_subscribe, enable_e2ee, key } => {
+            AsyncCmd::RoomConnect {
+                url,
+                token,
+                auto_subscribe,
+                enable_e2ee,
+                key,
+            } => {
                 log::info!("connecting to room: {}", url);
 
                 let key_provider =
                     KeyProvider::with_shared_key(KeyProviderOptions::default(), key.into_bytes());
-                let e2ee = enable_e2ee
-                    .then_some(E2eeOptions { encryption_type: EncryptionType::Gcm, key_provider });
+                let e2ee = enable_e2ee.then_some(E2eeOptions {
+                    encryption_type: EncryptionType::Gcm,
+                    key_provider,
+                });
 
                 let mut options = RoomOptions::default();
                 options.auto_subscribe = auto_subscribe;
@@ -173,11 +219,16 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                         track.unpublish();
                         let _ = inner.ui_tx.send(UiCmd::DataTrackUnpublished);
                     } else {
-                        match state.room.local_participant().publish_data_track("slider").await {
+                        match state
+                            .room
+                            .local_participant()
+                            .publish_data_track("slider")
+                            .await
+                        {
                             Ok(track) => {
-                                let _ = inner
-                                    .ui_tx
-                                    .send(UiCmd::DataTrackPublished { track: track.clone() });
+                                let _ = inner.ui_tx.send(UiCmd::DataTrackPublished {
+                                    track: track.clone(),
+                                });
                                 state.data_track = Some(track);
                             }
                             Err(err) => log::error!("failed to publish data track: {err}"),
@@ -191,7 +242,10 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
             AsyncCmd::UnsubscribeTrack { publication } => {
                 publication.set_subscribed(false);
             }
-            AsyncCmd::SetVideoQuality { publication, quality } => {
+            AsyncCmd::SetVideoQuality {
+                publication,
+                quality,
+            } => {
                 publication.set_video_quality(quality);
             }
             AsyncCmd::E2eeKeyRatchet => {
@@ -202,7 +256,12 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     }
                 }
             }
-            AsyncCmd::RpcSendRequest { destination, method, payload, request_id } => {
+            AsyncCmd::RpcSendRequest {
+                destination,
+                method,
+                payload,
+                request_id,
+            } => {
                 if let Some(state) = running_state.as_ref() {
                     let local = state.room.local_participant();
                     let ui_tx = inner.ui_tx.clone();

@@ -18,13 +18,20 @@ pub struct LocalDataTrackTile {
 impl LocalDataTrackTile {
     pub fn new(track: LocalDataTrack) -> Self {
         let name = track.info().name().to_string();
-        Self { track, slider_value: 0, points: Arc::new(Mutex::new(VecDeque::new())), name }
+        Self {
+            track,
+            slider_value: 0,
+            points: Arc::new(Mutex::new(VecDeque::new())),
+            name,
+        }
     }
 
     pub fn push_value(&self) {
         let frame = DataTrackFrame::new(self.slider_value.to_string().into_bytes());
         let _ = self.track.try_push(frame);
-        self.points.lock().push_front((Instant::now(), self.slider_value));
+        self.points
+            .lock()
+            .push_front((Instant::now(), self.slider_value));
     }
 }
 
@@ -51,12 +58,20 @@ impl RemoteDataTrackTile {
             };
             while let Some(frame) = stream.next().await {
                 let payload = frame.payload();
-                let Ok(s) = std::str::from_utf8(&payload) else { continue };
-                let Ok(value) = s.parse::<i32>() else { continue };
+                let Ok(s) = std::str::from_utf8(&payload) else {
+                    continue;
+                };
+                let Ok(value) = s.parse::<i32>() else {
+                    continue;
+                };
                 points_ref.lock().push_front((Instant::now(), value));
             }
         });
 
-        Self { points, publisher_identity, name }
+        Self {
+            points,
+            publisher_identity,
+            name,
+        }
     }
 }

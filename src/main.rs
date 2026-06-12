@@ -20,25 +20,31 @@ fn main() {
     console_subscriber::init();
 
     // Create a background thread which checks for deadlocks every 10s
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(10));
-        let deadlocks = deadlock::check_deadlock();
-        if deadlocks.is_empty() {
-            continue;
-        }
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(10));
+            let deadlocks = deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
 
-        log::error!("{} deadlocks detected", deadlocks.len());
-        for (i, threads) in deadlocks.iter().enumerate() {
-            log::error!("Deadlock #{}", i);
-            for t in threads {
-                log::error!("Thread Id {:#?}: \n{:#?}", t.thread_id(), t.backtrace());
+            log::error!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                log::error!("Deadlock #{}", i);
+                for t in threads {
+                    log::error!("Thread Id {:#?}: \n{:#?}", t.thread_id(), t.backtrace());
+                }
             }
         }
     });
 
     eframe::run_native(
         "LiveKit Client",
-        eframe::NativeOptions { centered: true, renderer: Renderer::Wgpu, ..Default::default() },
+        eframe::NativeOptions {
+            centered: true,
+            renderer: Renderer::Wgpu,
+            ..Default::default()
+        },
         Box::new(|cc| Ok(Box::new(app::LkApp::new(cc)))),
     )
     .unwrap();

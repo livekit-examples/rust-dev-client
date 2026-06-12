@@ -48,7 +48,10 @@ impl LogoTrack {
     pub fn new(room: Arc<Room>) -> Self {
         Self {
             rtc_source: NativeVideoSource::new(
-                VideoResolution { width: FB_WIDTH as u32, height: FB_HEIGHT as u32 },
+                VideoResolution {
+                    width: FB_WIDTH as u32,
+                    height: FB_HEIGHT as u32,
+                },
                 false,
             ),
             room,
@@ -84,7 +87,11 @@ impl LogoTrack {
             )
             .await?;
 
-        let handle = TrackHandle { close_tx, task, track };
+        let handle = TrackHandle {
+            close_tx,
+            task,
+            track,
+        };
 
         self.handle = Some(handle);
         Ok(())
@@ -95,7 +102,10 @@ impl LogoTrack {
             let _ = handle.close_tx.send(());
             let _ = handle.task.await;
 
-            self.room.local_participant().unpublish_track(&handle.track.sid()).await?;
+            self.room
+                .local_participant()
+                .unpublish_track(&handle.track.sid())
+                .await?;
         }
         Ok(())
     }

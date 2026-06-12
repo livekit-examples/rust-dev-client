@@ -1,12 +1,12 @@
 use crate::{
-    data_track::{LocalDataTrackTile, RemoteDataTrackTile, MAX_VALUE, TIME_WINDOW},
+    data_track::{LocalDataTrackTile, MAX_VALUE, RemoteDataTrackTile, TIME_WINDOW},
     rpc_ui::RpcUiState,
     service::{AsyncCmd, LkService, UiCmd},
     video_grid::VideoGrid,
     video_renderer::VideoRenderer,
 };
-use egui::{emath, epaint, pos2, Color32, CornerRadius, Rect, Stroke};
-use livekit::{e2ee::EncryptionType, prelude::*, track::VideoQuality, SimulateScenario};
+use egui::{Color32, CornerRadius, Rect, Stroke, emath, epaint, pos2};
+use livekit::{SimulateScenario, e2ee::EncryptionType, prelude::*, track::VideoQuality};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -60,8 +60,10 @@ impl LkApp {
             .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
             .unwrap_or_default();
 
-        let async_runtime =
-            tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let async_runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         Self {
             service: LkService::new(async_runtime.handle()),
@@ -98,7 +100,11 @@ impl LkApp {
             UiCmd::RoomEvent { event } => {
                 log::info!("{:?}", event);
                 match event {
-                    RoomEvent::TrackSubscribed { track, publication: _, participant } => {
+                    RoomEvent::TrackSubscribed {
+                        track,
+                        publication: _,
+                        participant,
+                    } => {
                         if let RemoteTrack::Video(ref video_track) = track {
                             let video_renderer = VideoRenderer::new(
                                 self.async_runtime.handle(),
@@ -109,10 +115,19 @@ impl LkApp {
                                 .insert((participant.identity(), track.sid()), video_renderer);
                         }
                     }
-                    RoomEvent::TrackUnsubscribed { track, publication: _, participant } => {
-                        self.video_renderers.remove(&(participant.identity(), track.sid()));
+                    RoomEvent::TrackUnsubscribed {
+                        track,
+                        publication: _,
+                        participant,
+                    } => {
+                        self.video_renderers
+                            .remove(&(participant.identity(), track.sid()));
                     }
-                    RoomEvent::LocalTrackPublished { track, publication: _, participant } => {
+                    RoomEvent::LocalTrackPublished {
+                        track,
+                        publication: _,
+                        participant,
+                    } => {
                         if let LocalTrack::Video(ref video_track) = track {
                             let video_renderer = VideoRenderer::new(
                                 self.async_runtime.handle(),
@@ -123,8 +138,12 @@ impl LkApp {
                                 .insert((participant.identity(), track.sid()), video_renderer);
                         }
                     }
-                    RoomEvent::LocalTrackUnpublished { publication, participant } => {
-                        self.video_renderers.remove(&(participant.identity(), publication.sid()));
+                    RoomEvent::LocalTrackUnpublished {
+                        publication,
+                        participant,
+                    } => {
+                        self.video_renderers
+                            .remove(&(participant.identity(), publication.sid()));
                     }
                     RoomEvent::DataTrackPublished(track) => {
                         self.remote_data_tracks
@@ -253,7 +272,10 @@ impl LkApp {
             ui.label(format!("Name: {}", room.name()));
             //ui.label(format!("Sid: {}", String::from(room.sid().await)));
             ui.label(format!("ConnectionState: {:?}", room.connection_state()));
-            ui.label(format!("ParticipantCount: {:?}", room.remote_participants().len() + 1));
+            ui.label(format!(
+                "ParticipantCount: {:?}",
+                room.remote_participants().len() + 1
+            ));
         }
 
         egui::warn_if_debug_build(ui);
@@ -289,8 +311,10 @@ impl LkApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Iterate with sorted keys to avoid flickers (Because this is a immediate mode UI)
             let participants = room.remote_participants();
-            let mut sorted_participants =
-                participants.keys().cloned().collect::<Vec<ParticipantIdentity>>();
+            let mut sorted_participants = participants
+                .keys()
+                .cloned()
+                .collect::<Vec<ParticipantIdentity>>();
             sorted_participants.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
             for psid in sorted_participants {
@@ -313,7 +337,11 @@ impl LkApp {
                         }
                     });
 
-                    ui.label(format!("{} - {:?}", publication.name(), publication.source()));
+                    ui.label(format!(
+                        "{} - {:?}",
+                        publication.name(),
+                        publication.source()
+                    ));
 
                     ui.horizontal(|ui| {
                         ui.label("Simulcasted - ");
@@ -355,8 +383,9 @@ impl LkApp {
 
                         if publication.is_subscribed() {
                             if ui.button("Unsubscribe").clicked() {
-                                let _ =
-                                    self.service.send(AsyncCmd::UnsubscribeTrack { publication });
+                                let _ = self
+                                    .service
+                                    .send(AsyncCmd::UnsubscribeTrack { publication });
                             }
                         } else if ui.button("Subscribe").clicked() {
                             let _ = self.service.send(AsyncCmd::SubscribeTrack { publication });
@@ -385,46 +414,52 @@ impl LkApp {
         }
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            VideoGrid::new("default_grid").max_columns(6).show(ui, |ui| {
-                if connected {
-                    let room = room.as_ref().unwrap();
+            VideoGrid::new("default_grid")
+                .max_columns(6)
+                .show(ui, |ui| {
+                    if connected {
+                        let room = room.as_ref().unwrap();
 
-                    for ((participant_id, _), video_renderer) in &self.video_renderers {
-                        ui.video_frame(|ui| {
-                            if let Some(p) = room.remote_participants().get(participant_id) {
-                                draw_video(p.name().as_str(), p.is_speaking(), video_renderer, ui);
-                            } else {
-                                let lp = room.local_participant();
-                                draw_video(
-                                    lp.name().as_str(),
-                                    lp.is_speaking(),
-                                    video_renderer,
-                                    ui,
-                                );
-                            }
-                        });
-                    }
+                        for ((participant_id, _), video_renderer) in &self.video_renderers {
+                            ui.video_frame(|ui| {
+                                if let Some(p) = room.remote_participants().get(participant_id) {
+                                    draw_video(
+                                        p.name().as_str(),
+                                        p.is_speaking(),
+                                        video_renderer,
+                                        ui,
+                                    );
+                                } else {
+                                    let lp = room.local_participant();
+                                    draw_video(
+                                        lp.name().as_str(),
+                                        lp.is_speaking(),
+                                        video_renderer,
+                                        ui,
+                                    );
+                                }
+                            });
+                        }
 
-                    for tile in &mut self.local_data_tracks {
-                        ui.video_frame(|ui| draw_local_data_track(tile, ui));
-                    }
+                        for tile in &mut self.local_data_tracks {
+                            ui.video_frame(|ui| draw_local_data_track(tile, ui));
+                        }
 
-                    for tile in &self.remote_data_tracks {
-                        ui.video_frame(|ui| draw_remote_data_track(tile, ui));
+                        for tile in &self.remote_data_tracks {
+                            ui.video_frame(|ui| draw_remote_data_track(tile, ui));
+                        }
+                    } else {
+                        for _ in 0..5 {
+                            ui.video_frame(|ui| {
+                                egui::Frame::none()
+                                    .fill(ui.style().visuals.code_bg_color)
+                                    .show(ui, |ui| {
+                                        ui.allocate_space(ui.available_size());
+                                    });
+                            });
+                        }
                     }
-                } else {
-                    for _ in 0..5 {
-                        ui.video_frame(|ui| {
-                            egui::Frame::none().fill(ui.style().visuals.code_bg_color).show(
-                                ui,
-                                |ui| {
-                                    ui.allocate_space(ui.available_size());
-                                },
-                            );
-                        });
-                    }
-                }
-            })
+                })
         });
     }
 }
@@ -443,12 +478,12 @@ impl eframe::App for LkApp {
             self.top_panel(ui);
         });
 
-        egui::SidePanel::left("left_panel").resizable(true).width_range(20.0..=360.0).show(
-            ctx,
-            |ui| {
+        egui::SidePanel::left("left_panel")
+            .resizable(true)
+            .width_range(20.0..=360.0)
+            .show(ctx, |ui| {
                 self.left_panel(ui);
-            },
-        );
+            });
 
         /*egui::TopBottomPanel::bottom("bottom_panel")
         .resizable(true)
@@ -457,12 +492,12 @@ impl eframe::App for LkApp {
             self.bottom_panel(ui);
         });*/
 
-        egui::SidePanel::right("right_panel").resizable(true).width_range(20.0..=360.0).show(
-            ctx,
-            |ui| {
+        egui::SidePanel::right("right_panel")
+            .resizable(true)
+            .width_range(20.0..=360.0)
+            .show(ctx, |ui| {
                 self.right_panel(ui);
-            },
-        );
+            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.central_panel(ui);
@@ -518,7 +553,12 @@ impl<'a> DataTrackChart<'a> {
         name: &'a str,
         publisher_label: &'a str,
     ) -> Self {
-        Self { points, name, publisher_label, drag_value: None }
+        Self {
+            points,
+            name,
+            publisher_label,
+            drag_value: None,
+        }
     }
 
     fn interactive(mut self, value: &'a mut i32) -> Self {
@@ -531,7 +571,11 @@ impl egui::Widget for DataTrackChart<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let mut drag_value = self.drag_value;
         let interactive = drag_value.is_some();
-        let sense = if interactive { egui::Sense::click_and_drag() } else { egui::Sense::hover() };
+        let sense = if interactive {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::hover()
+        };
 
         let desired_size = ui.available_size();
         let (rect, mut response) = ui.allocate_exact_size(desired_size, sense);
@@ -580,7 +624,10 @@ impl egui::Widget for DataTrackChart<'_> {
 
         let now = std::time::Instant::now();
         let mut points = self.points.lock();
-        while points.back().is_some_and(|(t, _)| now.duration_since(*t) > TIME_WINDOW) {
+        while points
+            .back()
+            .is_some_and(|(t, _)| now.duration_since(*t) > TIME_WINDOW)
+        {
             points.pop_back();
         }
 
@@ -603,8 +650,10 @@ impl egui::Widget for DataTrackChart<'_> {
                 screen_points.push(to_screen * pos2(age, val as f32));
             }
             drop(points);
-            painter
-                .add(epaint::Shape::line(screen_points, epaint::PathStroke::new(2.0, line_color)));
+            painter.add(epaint::Shape::line(
+                screen_points,
+                epaint::PathStroke::new(2.0, line_color),
+            ));
             ui.ctx().request_repaint();
         } else {
             drop(points);
@@ -631,7 +680,11 @@ impl egui::Widget for DataTrackChart<'_> {
                 Color32::WHITE,
             );
         } else {
-            let hint = if interactive { "Drag to Push Frames…" } else { "Waiting for Frames…" };
+            let hint = if interactive {
+                "Drag to Push Frames…"
+            } else {
+                "Waiting for Frames…"
+            };
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -666,5 +719,9 @@ fn draw_local_data_track(tile: &mut LocalDataTrackTile, ui: &mut egui::Ui) {
 }
 
 fn draw_remote_data_track(tile: &RemoteDataTrackTile, ui: &mut egui::Ui) {
-    ui.add(DataTrackChart::new(&tile.points, &tile.name, &tile.publisher_identity));
+    ui.add(DataTrackChart::new(
+        &tile.points,
+        &tile.name,
+        &tile.publisher_identity,
+    ));
 }

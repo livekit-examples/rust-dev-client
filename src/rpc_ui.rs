@@ -3,8 +3,8 @@ use egui::Color32;
 use livekit::prelude::*;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_INVOCATIONS: usize = 200;
@@ -68,7 +68,10 @@ impl RpcUiState {
         }
         self.send_result = Some(match result {
             Ok(s) => SendResult::Ok(s),
-            Err(e) => SendResult::Err { code: e.code, message: e.message },
+            Err(e) => SendResult::Err {
+                code: e.code,
+                message: e.message,
+            },
         });
     }
 
@@ -102,19 +105,20 @@ impl RpcUiState {
 
         ui.horizontal(|ui| {
             ui.label("To:");
-            let combo_label =
-                self.send_destination.as_ref().map(|i| i.as_str().to_string()).unwrap_or_else(
-                    || {
-                        if idents.is_empty() {
-                            "(no remote participants)".to_string()
-                        } else {
-                            "(select)".to_string()
-                        }
-                    },
-                );
-            egui::ComboBox::from_id_salt("rpc_dest_combo").selected_text(combo_label).show_ui(
-                ui,
-                |ui| {
+            let combo_label = self
+                .send_destination
+                .as_ref()
+                .map(|i| i.as_str().to_string())
+                .unwrap_or_else(|| {
+                    if idents.is_empty() {
+                        "(no remote participants)".to_string()
+                    } else {
+                        "(select)".to_string()
+                    }
+                });
+            egui::ComboBox::from_id_salt("rpc_dest_combo")
+                .selected_text(combo_label)
+                .show_ui(ui, |ui| {
                     for ident in &idents {
                         ui.selectable_value(
                             &mut self.send_destination,
@@ -122,8 +126,7 @@ impl RpcUiState {
                             ident.as_str(),
                         );
                     }
-                },
-            );
+                });
         });
 
         ui.horizontal(|ui| {
@@ -141,16 +144,16 @@ impl RpcUiState {
             }
         });
         let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
-        egui::ScrollArea::vertical().id_salt("rpc_send_payload_scroll").max_height(max_h).show(
-            ui,
-            |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt("rpc_send_payload_scroll")
+            .max_height(max_h)
+            .show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.send_payload)
                         .desired_rows(2)
                         .desired_width(f32::INFINITY),
                 );
-            },
-        );
+            });
 
         let can_send = self.send_in_flight.is_none()
             && self.send_destination.is_some()
@@ -179,9 +182,15 @@ impl RpcUiState {
         });
 
         if self.send_in_flight.is_some() {
-            let dest =
-                self.send_destination.as_ref().map(|i| i.as_str().to_string()).unwrap_or_default();
-            ui.colored_label(Color32::GRAY, format!("Sending to {} {}...", dest, self.send_method));
+            let dest = self
+                .send_destination
+                .as_ref()
+                .map(|i| i.as_str().to_string())
+                .unwrap_or_default();
+            ui.colored_label(
+                Color32::GRAY,
+                format!("Sending to {} {}...", dest, self.send_method),
+            );
         } else {
             match &self.send_result {
                 Some(SendResult::Ok(s)) => {
@@ -227,17 +236,18 @@ impl RpcUiState {
                 }));
                 let entry_for_cb = entry.clone();
                 let _guard = service.runtime().enter();
-                room.local_participant().register_rpc_method(method.clone(), move |data| {
-                    let entry_for_cb = entry_for_cb.clone();
-                    Box::pin(async move {
-                        let reply = {
-                            let mut g = entry_for_cb.lock();
-                            push_invocation(&mut g, &data);
-                            g.reply.clone()
-                        };
-                        Ok(reply)
-                    })
-                });
+                room.local_participant()
+                    .register_rpc_method(method.clone(), move |data| {
+                        let entry_for_cb = entry_for_cb.clone();
+                        Box::pin(async move {
+                            let reply = {
+                                let mut g = entry_for_cb.lock();
+                                push_invocation(&mut g, &data);
+                                g.reply.clone()
+                            };
+                            Ok(reply)
+                        })
+                    });
                 self.handlers.insert(method, entry);
                 self.register_method.clear();
             }

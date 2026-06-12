@@ -17,7 +17,12 @@ pub struct SineParameters {
 
 impl Default for SineParameters {
     fn default() -> Self {
-        Self { sample_rate: 48000, freq: 440.0, amplitude: 1.0, num_channels: 2 }
+        Self {
+            sample_rate: 48000,
+            freq: 440.0,
+            amplitude: 1.0,
+            num_channels: 2,
+        }
     }
 }
 
@@ -60,18 +65,28 @@ impl SineTrack {
             RtcAudioSource::Native(self.rtc_source.clone()),
         );
 
-        let task =
-            tokio::spawn(Self::track_task(close_rx, self.rtc_source.clone(), self.params.clone()));
+        let task = tokio::spawn(Self::track_task(
+            close_rx,
+            self.rtc_source.clone(),
+            self.params.clone(),
+        ));
 
         self.room
             .local_participant()
             .publish_track(
                 LocalTrack::Audio(track.clone()),
-                TrackPublishOptions { source: TrackSource::Microphone, ..Default::default() },
+                TrackPublishOptions {
+                    source: TrackSource::Microphone,
+                    ..Default::default()
+                },
             )
             .await?;
 
-        let handle = TrackHandle { close_tx, track, task };
+        let handle = TrackHandle {
+            close_tx,
+            track,
+            task,
+        };
 
         self.handle = Some(handle);
         Ok(())
@@ -81,7 +96,10 @@ impl SineTrack {
         if let Some(handle) = self.handle.take() {
             handle.close_tx.send(()).ok();
             handle.task.await.ok();
-            self.room.local_participant().unpublish_track(&handle.track.sid()).await?;
+            self.room
+                .local_participant()
+                .unpublish_track(&handle.track.sid())
+                .await?;
         }
 
         Ok(())
