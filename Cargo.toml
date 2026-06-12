@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = { version = "0.33.3", features = ["default_fonts", "wgpu", "persistence"] }
+eframe = { version = "0.34.3", features = ["default_fonts", "wgpu", "persistence"] }
 egui = "0.33.3"
 egui-wgpu = "0.33.3"
 env_logger = "0.11"
