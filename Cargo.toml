@@ -5,9 +5,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = { version = "0.33.3", features = ["default_fonts", "wgpu", "persistence"] }
-egui = "0.33.3"
-egui-wgpu = "0.33.3"
+eframe = { version = "0.34.3", features = ["default_fonts", "wgpu", "persistence"] }
+egui = "0.34.3"
+egui-wgpu = "0.34.3"
 env_logger = "0.11"
 futures = "0.3"
 image = "0.25"
@@ -15,7 +15,8 @@ log = "0.4"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full", "parking_lot"] }
-wgpu = "28.0"
+# egui-wgpu 0.34 requires wgpu ^29.0.1; "29.0" resolves to a compatible 29.0.x.
+wgpu = "29.0"
 winit = { version = "0.30.12", features = [ "android-native-activity" ] }
 livekit = { version = "0.7.45", features = ["rustls-tls-native-roots"] }
 

@@ -469,41 +469,41 @@ impl eframe::App for LkApp {
         eframe::set_value(storage, eframe::APP_KEY, &self.state);
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Some(event) = self.service.try_recv() {
             self.event(event);
         }
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show_inside(ui, |ui| {
             self.top_panel(ui);
         });
 
-        egui::SidePanel::left("left_panel")
+        egui::Panel::left("left_panel")
             .resizable(true)
-            .width_range(20.0..=360.0)
-            .show(ctx, |ui| {
+            .size_range(20.0..=360.0)
+            .show_inside(ui, |ui| {
                 self.left_panel(ui);
             });
 
-        /*egui::TopBottomPanel::bottom("bottom_panel")
+        /*egui::Panel::bottom("bottom_panel")
         .resizable(true)
-        .height_range(20.0..=256.0)
-        .show(ctx, |ui| {
+        .size_range(20.0..=256.0)
+        .show_inside(ui, |ui| {
             self.bottom_panel(ui);
         });*/
 
-        egui::SidePanel::right("right_panel")
+        egui::Panel::right("right_panel")
             .resizable(true)
-            .width_range(20.0..=360.0)
-            .show(ctx, |ui| {
+            .size_range(20.0..=360.0)
+            .show_inside(ui, |ui| {
                 self.right_panel(ui);
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             self.central_panel(ui);
         });
 
-        ctx.request_repaint();
+        ui.ctx().request_repaint();
     }
 }
 

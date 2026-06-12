@@ -11,7 +11,9 @@ impl State {
     }
 
     pub fn store(self, ctx: &egui::Context, id: egui::Id) {
-        ctx.data_mut(|i| i.insert_temp(id, self))
+        ctx.data_mut(|i| {
+            i.insert_temp(id, self);
+        });
     }
 }
 
