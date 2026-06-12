@@ -47,7 +47,6 @@ enum SendResult {
     Err { code: u32, message: String },
 }
 
-
 impl RpcUiState {
     pub fn handle_send_result(&mut self, request_id: u64, result: Result<String, RpcError>) {
         if self.send_in_flight == Some(request_id) {
@@ -85,9 +84,10 @@ impl RpcUiState {
         idents.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
         if let Some(sel) = self.send_destination.as_ref()
-            && !participants.contains_key(sel) {
-                self.send_destination = None;
-            }
+            && !participants.contains_key(sel)
+        {
+            self.send_destination = None;
+        }
 
         ui.horizontal(|ui| {
             ui.label("To:");

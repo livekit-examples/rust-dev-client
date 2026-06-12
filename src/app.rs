@@ -611,15 +611,16 @@ impl egui::Widget for DataTrackChart<'_> {
         );
 
         if let Some(value) = &mut drag_value
-            && let Some(pointer_pos) = response.interact_pointer_pos() {
-                let from_screen = to_screen.inverse();
-                let logical = from_screen * pointer_pos;
-                let new_val = (logical.y as i32).clamp(0, MAX_VALUE as i32);
-                if **value != new_val {
-                    **value = new_val;
-                    response.mark_changed();
-                }
+            && let Some(pointer_pos) = response.interact_pointer_pos()
+        {
+            let from_screen = to_screen.inverse();
+            let logical = from_screen * pointer_pos;
+            let new_val = (logical.y as i32).clamp(0, MAX_VALUE as i32);
+            if **value != new_val {
+                **value = new_val;
+                response.mark_changed();
             }
+        }
 
         let now = std::time::Instant::now();
         let mut points = self.points.lock();

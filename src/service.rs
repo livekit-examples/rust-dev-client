@@ -190,9 +190,10 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
             }
             AsyncCmd::SimulateScenario { scenario } => {
                 if let Some(state) = running_state.as_ref()
-                    && let Err(err) = state.room.simulate_scenario(scenario).await {
-                        log::error!("failed to simulate scenario: {:?}", err);
-                    }
+                    && let Err(err) = state.room.simulate_scenario(scenario).await
+                {
+                    log::error!("failed to simulate scenario: {:?}", err);
+                }
             }
             AsyncCmd::ToggleLogo => {
                 if let Some(state) = running_state.as_mut() {
