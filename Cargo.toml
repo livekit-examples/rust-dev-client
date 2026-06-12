@@ -33,3 +33,10 @@ identifier = "io.livekit.rust-dev-client"
 resources = ["src/moving-logo.png"]
 copyright = "2026 LiveKit, Inc."
 category = "public.app-category.developer-tools"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
