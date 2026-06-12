@@ -37,7 +37,7 @@ fn main() {
     });
 
     eframe::run_native(
-        "LiveKit - Rust App",
+        "LiveKit Client",
         eframe::NativeOptions { centered: true, renderer: Renderer::Wgpu, ..Default::default() },
         Box::new(|cc| Ok(Box::new(app::LkApp::new(cc)))),
     )
