@@ -171,9 +171,11 @@ impl<'a> VideoGridContext<'a> {
         let frame_rect = self.layout.next_frame_rect();
 
         if self.ui.is_visible() {
-            let mut child_ui = self
-                .ui
-                .new_child(egui::UiBuilder::new().max_rect(frame_rect).layout(egui::Layout::default()));
+            let mut child_ui = self.ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(frame_rect)
+                    .layout(egui::Layout::default()),
+            );
             add_contents(&mut child_ui);
         }
 
