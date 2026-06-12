@@ -211,9 +211,9 @@ impl RpcUiState {
             let method = self.register_method.trim().to_string();
             if method.is_empty() {
                 self.register_error = Some("Topic is empty".to_string());
-            } else if self.handlers.contains_key(&method) {
-                self.register_error = Some(format!("Handler already registered for '{}'", method));
-            } else {
+            } else if let std::collections::btree_map::Entry::Vacant(slot) =
+                self.handlers.entry(method.clone())
+            {
                 let entry = Arc::new(Mutex::new(HandlerEntry {
                     method: method.clone(),
                     reply: String::new(),
@@ -234,8 +234,10 @@ impl RpcUiState {
                             Ok(reply)
                         })
                     });
-                self.handlers.insert(method, entry);
+                slot.insert(entry);
                 self.register_method.clear();
+            } else {
+                self.register_error = Some(format!("Handler already registered for '{}'", method));
             }
         }
 
