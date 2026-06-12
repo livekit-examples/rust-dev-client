@@ -1,5 +1,6 @@
 [package]
 name = "rust-dev-client"
+description = "LiveKit Developer Client"
 version = "0.1.0"
 edition = "2024"
 
@@ -22,3 +23,10 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full", "parking_lot"] }
 wgpu = "28.0"
 winit = { version = "0.30.12", features = [ "android-native-activity" ] }
+
+[package.metadata.bundle]
+name = "LiveKit Client"
+identifier = "io.livekit.rust-dev-client"
+resources = ["src/moving-logo.png"]
+copyright = "2026 LiveKit, Inc."
+category = "public.app-category.developer-tools"
