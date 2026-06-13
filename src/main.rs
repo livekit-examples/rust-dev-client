@@ -14,7 +14,11 @@ fn main() {
     env_logger::init();
     utils::watch_for_deadlocks();
 
+    let viewport = egui::ViewportBuilder::default()
+        .with_icon(egui::IconData::default()); // TODO: add custom icon
+
     let options = eframe::NativeOptions {
+        viewport,
         centered: true,
         ..Default::default()
     };
