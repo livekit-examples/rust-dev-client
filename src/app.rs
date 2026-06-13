@@ -25,18 +25,13 @@ pub struct AppRoot {
 
 impl AppRoot {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let settings: ConnectSettings = cc
-            .storage
-            .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
-            .unwrap_or_default();
-
         let async_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
 
         Self {
-            launcher: LauncherView::new(settings),
+            launcher: LauncherView::default(),
             render_state: cc.wgpu_render_state.clone().unwrap(),
             async_runtime,
             next_window_id: 0,
@@ -66,10 +61,6 @@ impl AppRoot {
 }
 
 impl eframe::App for AppRoot {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, &self.launcher.settings);
-    }
-
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Some(request) = self.launcher.ui(ui) {
             self.open_connection(request);

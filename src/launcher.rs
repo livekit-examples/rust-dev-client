@@ -1,7 +1,6 @@
-/// Connection settings entered in the launcher. Saved on app exit and
-/// restored on app start; one copy per application, not per window.
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
-#[serde(default)]
+/// Connection settings entered in the launcher; one copy per application,
+/// passed to each connection window as it is opened.
+#[derive(Clone)]
 pub struct ConnectSettings {
     pub url: String,
     pub token: String,
@@ -24,15 +23,12 @@ impl Default for ConnectSettings {
 
 /// The root window: a welcome screen holding the only connection form in the
 /// app. Each successful Connect click spawns a dedicated connection window.
+#[derive(Default)]
 pub struct LauncherView {
     pub settings: ConnectSettings,
 }
 
 impl LauncherView {
-    pub fn new(settings: ConnectSettings) -> Self {
-        Self { settings }
-    }
-
     /// Returns the settings to open a connection with when Connect is clicked.
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<ConnectSettings> {
         let mut request = None;
