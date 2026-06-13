@@ -16,9 +16,9 @@ fn main() {
     env_logger::init();
     utils::watch_for_deadlocks();
 
-    // The root window is the launcher: a compact connect form.
     let viewport = egui::ViewportBuilder::default()
-        .with_inner_size([420.0, 280.0])
+        .with_inner_size([280.0, 480.0])
+        .with_resizable(false)
         .with_icon(egui::IconData::default()); // TODO: add custom icon
 
     let options = eframe::NativeOptions {
