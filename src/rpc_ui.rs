@@ -68,15 +68,29 @@ impl RpcUiState {
         self.register_error = None;
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Arc<Room>) {
-        self.show_send(ui, service, room);
+    /// Widget ids are salted with `window_id`: all viewports share a single
+    /// egui::Context, so unsalted ids would share state across windows.
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        service: &LkService,
+        room: &Arc<Room>,
+        window_id: u64,
+    ) {
+        self.show_send(ui, service, room, window_id);
         ui.add_space(8.0);
         ui.separator();
         self.show_register(ui, service, room);
-        self.show_handler_cards(ui, service, room);
+        self.show_handler_cards(ui, service, room, window_id);
     }
 
-    fn show_send(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Arc<Room>) {
+    fn show_send(
+        &mut self,
+        ui: &mut egui::Ui,
+        service: &LkService,
+        room: &Arc<Room>,
+        window_id: u64,
+    ) {
         ui.label(egui::RichText::new("Send RPC").strong());
 
         let participants = room.remote_participants();
@@ -102,7 +116,7 @@ impl RpcUiState {
                         "(select)".to_string()
                     }
                 });
-            egui::ComboBox::from_id_salt("rpc_dest_combo")
+            egui::ComboBox::from_id_salt(("rpc_dest_combo", window_id))
                 .selected_text(combo_label)
                 .show_ui(ui, |ui| {
                     for ident in &idents {
@@ -131,7 +145,7 @@ impl RpcUiState {
         });
         let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
         egui::ScrollArea::vertical()
-            .id_salt("rpc_send_payload_scroll")
+            .id_salt(("rpc_send_payload_scroll", window_id))
             .max_height(max_h)
             .show(ui, |ui| {
                 ui.add(
@@ -246,7 +260,13 @@ impl RpcUiState {
         }
     }
 
-    fn show_handler_cards(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Arc<Room>) {
+    fn show_handler_cards(
+        &mut self,
+        ui: &mut egui::Ui,
+        service: &LkService,
+        room: &Arc<Room>,
+        window_id: u64,
+    ) {
         let methods: Vec<String> = self.handlers.keys().cloned().collect();
         let mut to_remove: Option<String> = None;
 
@@ -275,7 +295,7 @@ impl RpcUiState {
                 });
                 let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
                 egui::ScrollArea::vertical()
-                    .id_salt(format!("rpc_handler_reply_scroll_{}", guard.method))
+                    .id_salt(("rpc_handler_reply_scroll", guard.method.as_str(), window_id))
                     .max_height(max_h)
                     .show(ui, |ui| {
                         ui.add(
