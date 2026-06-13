@@ -85,7 +85,7 @@ impl LauncherView {
 
                 ui.vertical(|ui| {
                     let label = ui.label("Token");
-                    ui.text_edit_multiline(&mut self.settings.token)
+                    ui.text_edit_singleline(&mut self.settings.token)
                         .labelled_by(label.id);
                 });
                 ui.add_space(8.0);
