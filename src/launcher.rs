@@ -70,41 +70,60 @@ impl LauncherView {
         egui::CentralPanel::default()
             .frame(frame)
             .show_inside(ui, |ui| {
-                let connect_string =
-                    egui::RichText::new("Connect to a Room").text_style(egui::TextStyle::Heading);
-
-                ui.label(connect_string);
-                ui.add_space(8.0);
-
-                ui.vertical(|ui| {
-                    let label = ui.label("URL");
-                    ui.text_edit_singleline(&mut self.settings.url)
-                        .labelled_by(label.id);
+                ui.add(LauncherForm {
+                    settings: &mut self.settings,
                 });
-                ui.add_space(8.0);
-
-                ui.vertical(|ui| {
-                    let label = ui.label("Token");
-                    ui.text_edit_singleline(&mut self.settings.token)
-                        .labelled_by(label.id);
-                });
-                ui.add_space(8.0);
-
-                ui.vertical(|ui| {
-                    let label = ui.label("E2EE Key");
-                    ui.add_enabled_ui(self.settings.enable_e2ee, |ui| {
-                        ui.text_edit_singleline(&mut self.settings.key)
-                            .labelled_by(label.id)
-                    });
-                });
-                ui.add_space(8.0);
-
-                ui.checkbox(&mut self.settings.enable_e2ee, "Enable E2EE");
-                ui.checkbox(&mut self.settings.auto_subscribe, "Auto Subscribe");
-
-                ui.add_space(8.0);
             });
 
         request
+    }
+}
+
+/// The connection form fields (URL / token / E2EE / options). The Connect
+/// button lives in the launcher's bottom panel, so this widget only edits the
+/// borrowed [`ConnectSettings`].
+struct LauncherForm<'a> {
+    settings: &'a mut ConnectSettings,
+}
+
+impl egui::Widget for LauncherForm<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let settings = self.settings;
+        ui.vertical(|ui| {
+            let connect_string =
+                egui::RichText::new("Connect to a Room").text_style(egui::TextStyle::Heading);
+
+            ui.label(connect_string);
+            ui.add_space(8.0);
+
+            ui.vertical(|ui| {
+                let label = ui.label("URL");
+                ui.text_edit_singleline(&mut settings.url)
+                    .labelled_by(label.id);
+            });
+            ui.add_space(8.0);
+
+            ui.vertical(|ui| {
+                let label = ui.label("Token");
+                ui.text_edit_singleline(&mut settings.token)
+                    .labelled_by(label.id);
+            });
+            ui.add_space(8.0);
+
+            ui.vertical(|ui| {
+                let label = ui.label("E2EE Key");
+                ui.add_enabled_ui(settings.enable_e2ee, |ui| {
+                    ui.text_edit_singleline(&mut settings.key)
+                        .labelled_by(label.id)
+                });
+            });
+            ui.add_space(8.0);
+
+            ui.checkbox(&mut settings.enable_e2ee, "Enable E2EE");
+            ui.checkbox(&mut settings.auto_subscribe, "Auto Subscribe");
+
+            ui.add_space(8.0);
+        })
+        .response
     }
 }

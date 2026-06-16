@@ -1,3 +1,4 @@
+use crate::connection_window::ConnCtx;
 use crate::service::{AsyncCmd, LkService};
 use egui::Color32;
 use livekit::prelude::*;
@@ -68,29 +69,21 @@ impl RpcUiState {
         self.register_error = None;
     }
 
-    /// Widget ids are salted with `window_id`: all viewports share a single
+    /// Widget ids are salted with `ctx.id`: all viewports share a single
     /// egui::Context, so unsalted ids would share state across windows.
-    pub fn show(
-        &mut self,
-        ui: &mut egui::Ui,
-        service: &LkService,
-        room: &Arc<Room>,
-        window_id: u64,
-    ) {
-        self.show_send(ui, service, room, window_id);
+    pub fn show(&mut self, ui: &mut egui::Ui, ctx: &ConnCtx) {
+        let Some(room) = ctx.room else {
+            ui.label("Not connected");
+            return;
+        };
+        self.show_send(ui, ctx.service, room, ctx.id);
         ui.add_space(8.0);
         ui.separator();
-        self.show_register(ui, service, room);
-        self.show_handler_cards(ui, service, room, window_id);
+        self.show_register(ui, ctx.service, room);
+        self.show_handler_cards(ui, ctx.service, room, ctx.id);
     }
 
-    fn show_send(
-        &mut self,
-        ui: &mut egui::Ui,
-        service: &LkService,
-        room: &Arc<Room>,
-        window_id: u64,
-    ) {
+    fn show_send(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Room, id: egui::Id) {
         ui.label(egui::RichText::new("Send RPC").strong());
 
         let participants = room.remote_participants();
@@ -116,7 +109,7 @@ impl RpcUiState {
                         "(select)".to_string()
                     }
                 });
-            egui::ComboBox::from_id_salt(("rpc_dest_combo", window_id))
+            egui::ComboBox::from_id_salt(id.with("rpc_dest_combo"))
                 .selected_text(combo_label)
                 .show_ui(ui, |ui| {
                     for ident in &idents {
@@ -145,7 +138,7 @@ impl RpcUiState {
         });
         let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
         egui::ScrollArea::vertical()
-            .id_salt(("rpc_send_payload_scroll", window_id))
+            .id_salt(id.with("rpc_send_payload_scroll"))
             .max_height(max_h)
             .show(ui, |ui| {
                 ui.add(
@@ -204,7 +197,7 @@ impl RpcUiState {
         }
     }
 
-    fn show_register(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Arc<Room>) {
+    fn show_register(&mut self, ui: &mut egui::Ui, service: &LkService, room: &Room) {
         ui.label(egui::RichText::new("Handlers").strong());
 
         let mut do_register = false;
@@ -264,8 +257,8 @@ impl RpcUiState {
         &mut self,
         ui: &mut egui::Ui,
         service: &LkService,
-        room: &Arc<Room>,
-        window_id: u64,
+        room: &Room,
+        id: egui::Id,
     ) {
         let methods: Vec<String> = self.handlers.keys().cloned().collect();
         let mut to_remove: Option<String> = None;
@@ -295,7 +288,7 @@ impl RpcUiState {
                 });
                 let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
                 egui::ScrollArea::vertical()
-                    .id_salt(("rpc_handler_reply_scroll", guard.method.as_str(), window_id))
+                    .id_salt(id.with(("rpc_handler_reply_scroll", guard.method.as_str())))
                     .max_height(max_h)
                     .show(ui, |ui| {
                         ui.add(
@@ -335,6 +328,28 @@ impl RpcUiState {
             room.local_participant().unregister_rpc_method(m.clone());
             self.handlers.remove(&m);
         }
+    }
+}
+
+/// Widget: the RPC tab (send form, handler registration, invocation log) inside
+/// a scroll area. Borrows the persistent [`RpcUiState`] plus the connection
+/// context.
+pub struct RpcPanel<'a> {
+    pub state: &'a mut RpcUiState,
+    pub ctx: &'a ConnCtx<'a>,
+}
+
+impl egui::Widget for RpcPanel<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let RpcPanel { state, ctx } = self;
+        ui.scope(|ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(ctx.id.with("rpc_scroll"))
+                .show(ui, |ui| {
+                    state.show(ui, ctx);
+                });
+        })
+        .response
     }
 }
 
