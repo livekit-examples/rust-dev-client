@@ -11,7 +11,11 @@ mod video_renderer;
 static APP_NAME: &str = "LiveKit Client";
 
 fn main() {
-    env_logger::init();
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Info)
+        .parse_default_env()
+        .init();
+
     utils::watch_for_deadlocks();
 
     // FIXME: root window has to always be on top to prevent glitches with room windows.
