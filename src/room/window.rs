@@ -1,13 +1,13 @@
 use crate::room::RoomContext;
 use crate::{
     connect::ConnectSettings,
+    media::VideoRenderer,
     room::data_track::{LocalDataTrackTile, RemoteDataTrackTile},
     room::menu_bar::TopMenuBar,
     room::right_panel::{RightPanel, RightPanelState},
     room::sidebar::{Sidebar, SidebarActions},
     room::video_grid_view::VideoGridView,
     service::{AsyncCmd, LkService, UiCmd},
-    video_renderer::VideoRenderer,
 };
 use livekit::prelude::*;
 use std::collections::HashMap;

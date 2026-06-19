@@ -1,12 +1,10 @@
 mod app;
 mod connect;
-mod logo_track;
+mod media;
 mod room;
 mod service;
-mod sine_track;
 mod ui;
 mod utils;
-mod video_renderer;
 
 static APP_NAME: &str = "LiveKit Client";
 

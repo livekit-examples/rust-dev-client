@@ -1,7 +1,4 @@
-use crate::{
-    logo_track::LogoTrack,
-    sine_track::{SineParameters, SineTrack},
-};
+use crate::media::{LogoTrack, SineParameters, SineTrack};
 use livekit::{
     SimulateScenario,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},

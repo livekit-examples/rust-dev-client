@@ -1,9 +1,9 @@
+use crate::media::VideoRenderer;
 use crate::room::RoomContext;
 use crate::room::data_track::{
     LocalDataTrackTile, LocalDataTrackWidget, RemoteDataTrackTile, RemoteDataTrackWidget,
 };
 use crate::ui::{video_grid::VideoGrid, video_tile::VideoTile};
-use crate::video_renderer::VideoRenderer;
 use livekit::prelude::*;
 use std::collections::HashMap;
 

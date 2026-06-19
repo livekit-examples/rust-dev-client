@@ -115,7 +115,7 @@ impl LogoTrack {
 
         let image = tokio::task::spawn_blocking(|| {
             image::load_from_memory_with_format(
-                include_bytes!("../resources/moving-logo.png"),
+                include_bytes!("../../resources/moving-logo.png"),
                 ImageFormat::Png,
             )
             .unwrap()
