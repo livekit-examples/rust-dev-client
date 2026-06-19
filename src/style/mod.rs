@@ -1,5 +1,7 @@
-use egui::style::{Selection, WidgetVisuals, Widgets};
-use egui::{Context, Spacing, Stroke, Style, Theme, Vec2, Visuals};
+use std::collections::BTreeMap;
+
+use egui::style::{Selection, WidgetVisuals, Widgets, default_text_styles};
+use egui::{Context, FontId, Spacing, Stroke, Style, TextStyle, Theme, Vec2, Visuals};
 
 mod colors;
 pub use colors::Palette;
@@ -112,9 +114,13 @@ fn style_for_theme(theme: Theme) -> Style {
         ..Default::default()
     };
 
+    let mut text_styles = default_text_styles();
+    text_styles.insert(TextStyle::Small, FontId::proportional(10.));
+
     Style {
         visuals,
         spacing,
+        text_styles,
         ..base
     }
 }
