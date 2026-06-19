@@ -126,6 +126,21 @@ impl ConnectView {
         }
     }
 
+    /// If the identity ends in `-<number>` (e.g. `alice-0`), increment that
+    ///
+    /// Identities must be unique within a room, so bumping it after each
+    /// Connect lets you spin up several participants in the same room with one click.
+    ///
+    fn bump_identity(&mut self) {
+        let Some((base, suffix)) = self.identity.rsplit_once('-') else {
+            return;
+        };
+        let Ok(n) = suffix.parse::<u64>() else {
+            return;
+        };
+        self.identity = format!("{base}-{}", n.saturating_add(1));
+    }
+
     /// Returns the settings to open a room with when Connect is clicked.
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<ConnectSettings> {
         let mut request = None;
@@ -151,6 +166,9 @@ impl ConnectView {
                     ui.add(ProminentButton::new("Connect").enabled(self.is_connect_enabled()));
                 if connect.clicked() {
                     request = Some(self.current_settings());
+                    if self.method == AuthMethod::ApiKey {
+                        self.bump_identity();
+                    }
                 }
             });
 
