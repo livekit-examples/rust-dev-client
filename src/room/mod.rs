@@ -7,7 +7,7 @@ pub mod menu_bar;
 pub mod participants;
 pub mod right_panel;
 pub mod rpc;
-pub mod sidebar;
+pub mod status_bar;
 pub mod video_grid_view;
 pub mod window;
 

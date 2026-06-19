@@ -5,7 +5,7 @@ use crate::{
     room::data_track::{LocalDataTrackTile, RemoteDataTrackTile},
     room::menu_bar::TopMenuBar,
     room::right_panel::{RightPanel, RightPanelState},
-    room::sidebar::{Sidebar, SidebarActions},
+    room::status_bar::{StatusBar, StatusBarActions},
     room::video_grid_view::VideoGridView,
     service::{AsyncCmd, LkService, UiCmd},
 };
@@ -161,10 +161,10 @@ impl RoomWindow {
             self.event(event);
         }
 
-        let mut actions = SidebarActions::default();
+        let mut actions = StatusBarActions::default();
 
         // Scope `ctx` (which borrows `&self.service`) so it is released before
-        // we apply sidebar actions that need `&mut self`.
+        // we apply status-bar actions that need `&mut self`.
         {
             let room = self.service.room();
             let ctx = RoomContext {
@@ -174,18 +174,22 @@ impl RoomWindow {
             };
 
             egui::Panel::top(ctx.id.with("top_panel"))
-                .frame(egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 6)))
+                .frame(
+                    egui::Frame::central_panel(ui.style())
+                        .inner_margin(egui::Margin::symmetric(10, 6)),
+                )
                 .show_inside(ui, |ui| {
                     ui.add(TopMenuBar { ctx: &ctx });
                 });
 
-            egui::Panel::left(ctx.id.with("left_panel"))
-                .resizable(true)
-                .size_range(20.0..=360.0)
+            egui::Panel::bottom(ctx.id.with("status_bar"))
+                .frame(
+                    egui::Frame::central_panel(ui.style())
+                        .inner_margin(egui::Margin::symmetric(10, 6)),
+                )
                 .show_inside(ui, |ui| {
-                    ui.add(Sidebar {
+                    ui.add(StatusBar {
                         ctx: &ctx,
-                        url: &self.request.url,
                         connecting: self.connecting,
                         connection_failure: self.connection_failure.as_deref(),
                         actions: &mut actions,
