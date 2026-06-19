@@ -4,7 +4,7 @@ use egui::{Context, Stroke, Style, Theme, Visuals};
 mod colors;
 pub use colors::Palette;
 
-pub fn install_custom_style(ctx: &Context) {
+pub fn install_style(ctx: &Context) {
     ctx.options_mut(|opt| {
         opt.light_style = style_for_theme(Theme::Light).into();
         opt.dark_style = style_for_theme(Theme::Dark).into();
@@ -107,4 +107,30 @@ fn style_for_theme(theme: Theme) -> Style {
     };
 
     Style { visuals, ..base }
+}
+
+pub fn install_fonts(ctx: &Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "opensans".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../resources/opensans.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "firacode".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../resources/firacode.ttf")).into(),
+    );
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "opensans".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "firacode".to_owned());
+
+    ctx.set_fonts(fonts);
 }
