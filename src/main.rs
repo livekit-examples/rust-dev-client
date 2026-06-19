@@ -3,6 +3,7 @@ mod connect;
 mod media;
 mod room;
 mod service;
+mod style;
 mod ui;
 mod utils;
 

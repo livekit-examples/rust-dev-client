@@ -26,6 +26,7 @@ pub struct AppRoot {
 impl AppRoot {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_custom_fonts(&cc.egui_ctx);
+        crate::style::install_custom_style(&cc.egui_ctx);
 
         let async_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

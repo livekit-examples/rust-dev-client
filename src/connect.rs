@@ -99,14 +99,13 @@ impl ConnectView {
             return false;
         }
         match self.method {
-
             AuthMethod::ApiKey => {
                 !self.api_key.trim().is_empty()
                     && !self.api_secret.trim().is_empty()
                     && !self.identity.trim().is_empty()
                     && !self.room.trim().is_empty()
-            },
-            AuthMethod::Token => !self.token.trim().is_empty()
+            }
+            AuthMethod::Token => !self.token.trim().is_empty(),
         }
     }
 
@@ -118,7 +117,7 @@ impl ConnectView {
                 identity: self.identity.clone(),
                 room: self.room.clone(),
             },
-            AuthMethod::Token => Auth::Token(self.token.clone())
+            AuthMethod::Token => Auth::Token(self.token.clone()),
         };
         ConnectSettings {
             url: self.url.clone(),

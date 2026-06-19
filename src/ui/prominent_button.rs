@@ -1,7 +1,9 @@
-use egui::{Button, Color32, Response, RichText, Ui, Widget, vec2};
+use crate::style::Palette;
+use egui::{Button, Response, RichText, Ui, Widget, vec2};
 
-/// Widget: a filled, full-width call-to-action button (white text on a blue
-/// fill). Use [`Self::enabled`] to gate it; when disabled egui dims it.
+/// Widget: a filled, full-width call-to-action button — the accent token fill
+/// with knockout (background-colored) text. Use [`Self::enabled`] to gate it;
+/// when disabled egui dims it.
 pub struct ProminentButton {
     text: String,
     enabled: bool,
@@ -23,8 +25,9 @@ impl ProminentButton {
 
 impl Widget for ProminentButton {
     fn ui(self, ui: &mut Ui) -> Response {
-        let button = Button::new(RichText::new(self.text).color(Color32::WHITE))
-            .fill(Color32::from_rgb(40, 120, 200))
+        let palette = Palette::for_theme(ui.theme());
+        let button = Button::new(RichText::new(self.text).color(palette.bg_1))
+            .fill(palette.fg_accent)
             .min_size(vec2(ui.available_width(), 32.0));
         ui.add_enabled(self.enabled, button)
     }

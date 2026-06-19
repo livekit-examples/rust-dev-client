@@ -204,6 +204,7 @@ impl RoomWindow {
                 });
 
             egui::Panel::right(ctx.id.with("right_panel"))
+                .frame(egui::Frame::central_panel(ui.style()).outer_margin(0.))
                 .resizable(true)
                 .size_range(20.0..=360.0)
                 .show_inside(ui, |ui| {
