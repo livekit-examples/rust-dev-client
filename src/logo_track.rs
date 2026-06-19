@@ -114,9 +114,12 @@ impl LogoTrack {
         let mut interval = tokio::time::interval(Duration::from_millis(1000 / FRAME_RATE));
 
         let image = tokio::task::spawn_blocking(|| {
-            image::load_from_memory_with_format(include_bytes!("moving-logo.png"), ImageFormat::Png)
-                .unwrap()
-                .to_rgba8()
+            image::load_from_memory_with_format(
+                include_bytes!("../resources/moving-logo.png"),
+                ImageFormat::Png,
+            )
+            .unwrap()
+            .to_rgba8()
         })
         .await
         .unwrap();
