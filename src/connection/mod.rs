@@ -5,6 +5,7 @@ pub mod context;
 pub mod data_track;
 pub mod menu_bar;
 pub mod participants;
+pub mod right_panel;
 pub mod rpc;
 pub mod sidebar;
 pub mod video_grid_view;

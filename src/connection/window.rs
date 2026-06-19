@@ -2,9 +2,8 @@ use crate::connection::ConnCtx;
 use crate::{
     connection::data_track::{LocalDataTrackTile, RemoteDataTrackTile},
     connection::menu_bar::TopMenuBar,
-    connection::participants::ParticipantsPanel,
-    connection::rpc::{RpcPanel, RpcUiState},
-    connection::sidebar::{ConnectionControls, RoomInfo, SidebarActions},
+    connection::right_panel::{RightPanel, RightPanelState},
+    connection::sidebar::{Sidebar, SidebarActions},
     connection::video_grid_view::VideoGridView,
     launcher::ConnectSettings,
     service::{AsyncCmd, LkService, UiCmd},
@@ -12,12 +11,6 @@ use crate::{
 };
 use livekit::prelude::*;
 use std::collections::HashMap;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RightTab {
-    Participants,
-    Rpc,
-}
 
 /// State and UI of a single connection window. Connecting starts immediately
 /// on creation with the settings handed over by the launcher; there is no
@@ -33,8 +26,7 @@ pub struct ConnectionWindow {
     connection_failure: Option<String>,
     render_state: egui_wgpu::RenderState,
     service: LkService,
-    rpc_ui: RpcUiState,
-    right_tab: RightTab,
+    right_panel: RightPanelState,
 }
 
 impl ConnectionWindow {
@@ -55,8 +47,7 @@ impl ConnectionWindow {
             connecting: false,
             connection_failure: None,
             render_state,
-            rpc_ui: RpcUiState::default(),
-            right_tab: RightTab::Participants,
+            right_panel: RightPanelState::default(),
         };
         window.connect();
         window
@@ -96,7 +87,7 @@ impl ConnectionWindow {
                 self.local_data_tracks.clear();
             }
             UiCmd::RpcSendResult { request_id, result } => {
-                self.rpc_ui.handle_send_result(request_id, result);
+                self.right_panel.rpc.handle_send_result(request_id, result);
             }
             UiCmd::RoomEvent { event } => {
                 log::info!("{:?}", event);
@@ -154,7 +145,7 @@ impl ConnectionWindow {
                         self.video_renderers.clear();
                         self.local_data_tracks.clear();
                         self.remote_data_tracks.clear();
-                        self.rpc_ui.on_disconnect();
+                        self.right_panel.rpc.on_disconnect();
                     }
                     _ => {}
                 }
@@ -190,46 +181,23 @@ impl ConnectionWindow {
                 .resizable(true)
                 .size_range(20.0..=360.0)
                 .show_inside(ui, |ui| {
-                    ui.add_space(8.0);
-                    ui.monospace(&self.request.url);
-                    ui.add_space(8.0);
-                    ui.add(ConnectionControls {
+                    ui.add(Sidebar {
                         ctx: &ctx,
+                        url: &self.request.url,
                         connecting: self.connecting,
                         connection_failure: self.connection_failure.as_deref(),
                         actions: &mut actions,
                     });
-                    if let Some(room) = ctx.room {
-                        ui.add(RoomInfo { room });
-                    }
-                    ui.separator();
                 });
 
             egui::Panel::right(ctx.id.with("right_panel"))
                 .resizable(true)
                 .size_range(20.0..=360.0)
                 .show_inside(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(
-                            &mut self.right_tab,
-                            RightTab::Participants,
-                            "Participants",
-                        );
-                        ui.selectable_value(&mut self.right_tab, RightTab::Rpc, "RPC");
+                    ui.add(RightPanel {
+                        ctx: &ctx,
+                        state: &mut self.right_panel,
                     });
-                    ui.separator();
-
-                    match self.right_tab {
-                        RightTab::Participants => {
-                            ui.add(ParticipantsPanel { ctx: &ctx });
-                        }
-                        RightTab::Rpc => {
-                            ui.add(RpcPanel {
-                                state: &mut self.rpc_ui,
-                                ctx: &ctx,
-                            });
-                        }
-                    }
                 });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
