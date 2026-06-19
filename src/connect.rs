@@ -54,8 +54,8 @@ pub struct ConnectSettings {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum AuthMethod {
     #[default]
-    Token,
     ApiKey,
+    Token,
 }
 
 /// The root window: a welcome screen holding the only connect form in the app.
@@ -99,25 +99,26 @@ impl ConnectView {
             return false;
         }
         match self.method {
-            AuthMethod::Token => !self.token.trim().is_empty(),
+
             AuthMethod::ApiKey => {
                 !self.api_key.trim().is_empty()
                     && !self.api_secret.trim().is_empty()
                     && !self.identity.trim().is_empty()
                     && !self.room.trim().is_empty()
-            }
+            },
+            AuthMethod::Token => !self.token.trim().is_empty()
         }
     }
 
     fn current_settings(&self) -> ConnectSettings {
         let auth = match self.method {
-            AuthMethod::Token => Auth::Token(self.token.clone()),
             AuthMethod::ApiKey => Auth::ApiKey {
                 api_key: self.api_key.clone(),
                 api_secret: self.api_secret.clone(),
                 identity: self.identity.clone(),
                 room: self.room.clone(),
             },
+            AuthMethod::Token => Auth::Token(self.token.clone())
         };
         ConnectSettings {
             url: self.url.clone(),
@@ -202,8 +203,8 @@ impl egui::Widget for ConnectForm<'_> {
             ui.add_space(8.0);
 
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
+                ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .add(egui::Button::selectable(view.show_secrets, "👁"))
