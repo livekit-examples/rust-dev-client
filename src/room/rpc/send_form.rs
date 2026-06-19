@@ -1,5 +1,5 @@
 use super::{SendResult, SendState, preview_response};
-use crate::connection::ConnCtx;
+use crate::room::RoomContext;
 use crate::service::AsyncCmd;
 use crate::ui::{labeled_field::LabeledTextEdit, status_badge::StatusBadge};
 use livekit::prelude::*;
@@ -11,7 +11,7 @@ static NEXT_SEND_ID: AtomicU64 = AtomicU64::new(1);
 /// the Send button, and the in-flight / result status.
 pub struct RpcSendForm<'a> {
     pub state: &'a mut SendState,
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
     pub room: &'a Room,
 }
 

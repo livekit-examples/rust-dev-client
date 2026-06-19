@@ -1,11 +1,11 @@
-use crate::connection::ConnCtx;
+use crate::room::RoomContext;
 use crate::service::AsyncCmd;
 use crate::ui::status_badge::StatusBadge;
 use livekit::{e2ee::EncryptionType, prelude::*, track::VideoQuality};
 
 /// Scrollable list of remote participants and their track publications.
 pub struct ParticipantsPanel<'a> {
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
 }
 
 impl egui::Widget for ParticipantsPanel<'_> {
@@ -40,7 +40,7 @@ impl egui::Widget for ParticipantsPanel<'_> {
 
 /// One participant: identity header followed by a row per track publication.
 struct ParticipantCard<'a> {
-    ctx: &'a ConnCtx<'a>,
+    ctx: &'a RoomContext<'a>,
     participant: &'a RemoteParticipant,
 }
 
@@ -67,7 +67,7 @@ impl egui::Widget for ParticipantCard<'_> {
 /// One track publication: encryption, name/source, simulcast + quality menu,
 /// and muted/subscribed status with subscribe/unsubscribe controls.
 struct TrackPublicationRow<'a> {
-    ctx: &'a ConnCtx<'a>,
+    ctx: &'a RoomContext<'a>,
     publication: RemoteTrackPublication,
 }
 

@@ -1,7 +1,7 @@
 use crate::ui::{labeled_field::LabeledTextEdit, prominent_button::ProminentButton};
 
-/// Connection settings entered in the launcher; one copy per application,
-/// passed to each connection window as it is opened.
+/// Settings for connecting to a room, entered on the connect screen; one copy
+/// per application, passed to each room window as it is opened.
 #[derive(Clone)]
 pub struct ConnectSettings {
     pub url: String,
@@ -23,25 +23,25 @@ impl Default for ConnectSettings {
     }
 }
 
-/// The root window: a welcome screen holding the only connection form in the
-/// app. Each successful Connect click spawns a dedicated connection window.
+/// The root window: a welcome screen holding the only connect form in the app.
+/// Each successful Connect click spawns a dedicated room window.
 #[derive(Default)]
-pub struct LauncherView {
+pub struct ConnectView {
     pub settings: ConnectSettings,
 }
 
-impl LauncherView {
+impl ConnectView {
     fn is_connect_enabled(&self) -> bool {
         !self.settings.url.trim().is_empty() && !self.settings.token.trim().is_empty()
     }
 
-    /// Returns the settings to open a connection with when Connect is clicked.
+    /// Returns the settings to open a room with when Connect is clicked.
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<ConnectSettings> {
         let mut request = None;
 
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(16.0);
 
-        egui::Panel::bottom("launcher_info").show_inside(ui, |ui| {
+        egui::Panel::bottom("connect_info").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let version_string = format!("SDK Version: {}", livekit::SDK_VERSION);
                 let text = egui::RichText::new(version_string).text_style(egui::TextStyle::Small);
@@ -52,7 +52,7 @@ impl LauncherView {
             });
         });
 
-        egui::Panel::bottom("launcher_connect")
+        egui::Panel::bottom("connect_action")
             .frame(frame)
             .show_separator_line(false)
             .show_inside(ui, |ui| {
@@ -66,7 +66,7 @@ impl LauncherView {
         egui::CentralPanel::default()
             .frame(frame)
             .show_inside(ui, |ui| {
-                ui.add(LauncherForm {
+                ui.add(ConnectForm {
                     settings: &mut self.settings,
                 });
             });
@@ -75,14 +75,14 @@ impl LauncherView {
     }
 }
 
-/// The connection form fields (URL / token / E2EE / options). The Connect
-/// button lives in the launcher's bottom panel, so this widget only edits the
+/// The connect form fields (URL / token / E2EE / options). The Connect button
+/// lives in the connect screen's bottom panel, so this widget only edits the
 /// borrowed [`ConnectSettings`].
-struct LauncherForm<'a> {
+struct ConnectForm<'a> {
     settings: &'a mut ConnectSettings,
 }
 
-impl egui::Widget for LauncherForm<'_> {
+impl egui::Widget for ConnectForm<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let settings = self.settings;
         ui.vertical(|ui| {

@@ -1,6 +1,6 @@
 //! Reusable UI toolkit: widgets and layout helpers with **no** LiveKit / room /
-//! service / `ConnCtx` dependency. The room-context feature in `crate::connection`
-//! depends on this layer, never the reverse.
+//! service / `RoomCtx` dependency. The room feature in `crate::room` depends on
+//! this layer, never the reverse.
 
 pub mod data_chart;
 pub mod labeled_field;

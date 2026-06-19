@@ -1,7 +1,7 @@
 mod app;
-mod connection;
-mod launcher;
+mod connect;
 mod logo_track;
+mod room;
 mod service;
 mod sine_track;
 mod ui;

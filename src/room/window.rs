@@ -1,21 +1,21 @@
-use crate::connection::ConnCtx;
+use crate::room::RoomContext;
 use crate::{
-    connection::data_track::{LocalDataTrackTile, RemoteDataTrackTile},
-    connection::menu_bar::TopMenuBar,
-    connection::right_panel::{RightPanel, RightPanelState},
-    connection::sidebar::{Sidebar, SidebarActions},
-    connection::video_grid_view::VideoGridView,
-    launcher::ConnectSettings,
+    connect::ConnectSettings,
+    room::data_track::{LocalDataTrackTile, RemoteDataTrackTile},
+    room::menu_bar::TopMenuBar,
+    room::right_panel::{RightPanel, RightPanelState},
+    room::sidebar::{Sidebar, SidebarActions},
+    room::video_grid_view::VideoGridView,
     service::{AsyncCmd, LkService, UiCmd},
     video_renderer::VideoRenderer,
 };
 use livekit::prelude::*;
 use std::collections::HashMap;
 
-/// State and UI of a single connection window. Connecting starts immediately
-/// on creation with the settings handed over by the launcher; there is no
-/// connection form here.
-pub struct ConnectionWindow {
+/// State and UI of a single room window. Connecting starts immediately on
+/// creation with the settings handed over by the connect screen; there is no
+/// connect form here.
+pub struct RoomWindow {
     window_id: u64,
     runtime: tokio::runtime::Handle,
     request: ConnectSettings,
@@ -29,7 +29,7 @@ pub struct ConnectionWindow {
     right_panel: RightPanelState,
 }
 
-impl ConnectionWindow {
+impl RoomWindow {
     pub fn new(
         window_id: u64,
         runtime: tokio::runtime::Handle,
@@ -153,7 +153,7 @@ impl ConnectionWindow {
         }
     }
 
-    /// Panel ids are salted via `ConnCtx::id` (derived from `window_id`): all
+    /// Panel ids are salted via `RoomCtx::id` (derived from `window_id`): all
     /// viewports share a single `egui::Context`, so unsalted ids would share
     /// state across windows.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -167,7 +167,7 @@ impl ConnectionWindow {
         // we apply sidebar actions that need `&mut self`.
         {
             let room = self.service.room();
-            let ctx = ConnCtx {
+            let ctx = RoomContext {
                 service: &self.service,
                 room: room.as_deref(),
                 id: egui::Id::new(self.window_id),

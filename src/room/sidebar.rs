@@ -1,11 +1,10 @@
-use crate::connection::ConnCtx;
-use crate::service::AsyncCmd;
+use crate::room::RoomContext;
 use crate::ui::status_badge::StatusBadge;
 use livekit::prelude::*;
 
 /// Connect/disconnect intents raised by the sidebar. Its widgets only borrow
-/// `&ConnCtx`, so they can't drive the window's own connect/disconnect (which
-/// need `&mut ConnectionWindow`); they record the intent here and the window
+/// `&RoomCtx`, so they can't drive the window's own connect/disconnect (which
+/// need `&mut RoomWindow`); they record the intent here and the window
 /// applies it after the borrow ends.
 #[derive(Default)]
 pub struct SidebarActions {
@@ -15,7 +14,7 @@ pub struct SidebarActions {
 
 /// The left panel: connection URL, connect/disconnect controls, and room info.
 pub struct Sidebar<'a> {
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
     pub url: &'a str,
     pub connecting: bool,
     pub connection_failure: Option<&'a str>,
@@ -36,7 +35,7 @@ impl egui::Widget for Sidebar<'_> {
             ui.add_space(8.0);
             ui.monospace(url);
             ui.add_space(8.0);
-            ui.add(ConnectionControls {
+            ui.add(RoomControls {
                 ctx,
                 connecting,
                 connection_failure,
@@ -51,18 +50,18 @@ impl egui::Widget for Sidebar<'_> {
     }
 }
 
-/// Connection controls: connecting spinner / Disconnect / Reconnect, the E2EE
-/// key-ratchet button, and the last connection failure (if any).
-struct ConnectionControls<'a> {
-    ctx: &'a ConnCtx<'a>,
+/// Room connection controls: connecting spinner / Disconnect / Reconnect, the
+/// E2EE key-ratchet button, and the last connection failure (if any).
+struct RoomControls<'a> {
+    ctx: &'a RoomContext<'a>,
     connecting: bool,
     connection_failure: Option<&'a str>,
     actions: &'a mut SidebarActions,
 }
 
-impl egui::Widget for ConnectionControls<'_> {
+impl egui::Widget for RoomControls<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let ConnectionControls {
+        let RoomControls {
             ctx,
             connecting,
             connection_failure,

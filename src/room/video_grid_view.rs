@@ -1,5 +1,5 @@
-use crate::connection::ConnCtx;
-use crate::connection::data_track::{
+use crate::room::RoomContext;
+use crate::room::data_track::{
     LocalDataTrackTile, LocalDataTrackWidget, RemoteDataTrackTile, RemoteDataTrackWidget,
 };
 use crate::ui::{video_grid::VideoGrid, video_tile::VideoTile};
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 /// Central grid of all track tiles (video + data). When disconnected it shows a
 /// row of placeholder frames.
 pub struct VideoGridView<'a> {
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
     pub video_renderers: &'a HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
     pub local_data_tracks: &'a mut [LocalDataTrackTile],
     pub remote_data_tracks: &'a [RemoteDataTrackTile],

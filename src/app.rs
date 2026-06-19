@@ -1,24 +1,24 @@
-use crate::connection::ConnectionWindow;
-use crate::launcher::{ConnectSettings, LauncherView};
+use crate::connect::{ConnectSettings, ConnectView};
+use crate::room::RoomWindow;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// A connection window, shown as a deferred viewport so it repaints
-/// independently of the launcher and of other connections.
+/// A room window, shown as a deferred viewport so it repaints independently of
+/// the connect screen and of other rooms.
 struct WindowEntry {
     id: u64,
     title: String,
     open: Arc<AtomicBool>,
     /// Shared with the deferred viewport callback, which runs outside of
     /// [`AppRoot::ui`] and therefore needs `Send + Sync` access.
-    window: Arc<Mutex<ConnectionWindow>>,
+    window: Arc<Mutex<RoomWindow>>,
 }
 
 pub struct AppRoot {
     async_runtime: tokio::runtime::Runtime,
     render_state: egui_wgpu::RenderState,
-    launcher: LauncherView,
+    connect: ConnectView,
     next_window_id: u64,
     windows: Vec<WindowEntry>,
 }
@@ -31,7 +31,7 @@ impl AppRoot {
             .unwrap();
 
         Self {
-            launcher: LauncherView::default(),
+            connect: ConnectView::default(),
             render_state: cc.wgpu_render_state.clone().unwrap(),
             async_runtime,
             next_window_id: 0,
@@ -39,12 +39,12 @@ impl AppRoot {
         }
     }
 
-    fn open_connection(&mut self, request: ConnectSettings) {
+    fn open_room(&mut self, request: ConnectSettings) {
         let id = self.next_window_id;
         self.next_window_id += 1;
 
         let title = format!("{} - {}", crate::APP_NAME, request.url);
-        let window = ConnectionWindow::new(
+        let window = RoomWindow::new(
             id,
             self.async_runtime.handle().clone(),
             self.render_state.clone(),
@@ -62,8 +62,8 @@ impl AppRoot {
 
 impl eframe::App for AppRoot {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if let Some(request) = self.launcher.ui(ui) {
-            self.open_connection(request);
+        if let Some(request) = self.connect.ui(ui) {
+            self.open_room(request);
         }
 
         self.windows.retain(|window| {
@@ -80,7 +80,7 @@ impl eframe::App for AppRoot {
             let window = entry.window.clone();
             let open = entry.open.clone();
             ui.ctx().show_viewport_deferred(
-                egui::ViewportId::from_hash_of(("lk_connection", entry.id)),
+                egui::ViewportId::from_hash_of(("lk_room", entry.id)),
                 egui::ViewportBuilder::default()
                     .with_title(entry.title.clone())
                     .with_inner_size([800.0, 600.0]),
@@ -88,8 +88,8 @@ impl eframe::App for AppRoot {
                     window.lock().ui(ui);
                     if ui.input(|i| i.viewport().close_requested()) {
                         open.store(false, Ordering::Relaxed);
-                        // The launcher only repaints on interaction; wake it so
-                        // it notices and drops this window's connection.
+                        // The connect screen only repaints on interaction; wake it
+                        // so it notices and drops this room.
                         ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
                     }
                 },

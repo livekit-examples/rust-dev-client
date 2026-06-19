@@ -1,6 +1,6 @@
-use crate::connection::ConnCtx;
-use crate::connection::participants::ParticipantsPanel;
-use crate::connection::rpc::{RpcPanel, RpcUiState};
+use crate::room::RoomContext;
+use crate::room::participants::ParticipantsPanel;
+use crate::room::rpc::{RpcPanel, RpcUiState};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum RightTab {
@@ -21,7 +21,7 @@ pub struct RightPanelState {
 
 /// The right panel: a Participants / RPC tab selector and the active tab's view.
 pub struct RightPanel<'a> {
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
     pub state: &'a mut RightPanelState,
 }
 

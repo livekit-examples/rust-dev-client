@@ -1,10 +1,10 @@
-use crate::connection::ConnCtx;
+use crate::room::RoomContext;
 use crate::service::{AsyncCmd, LkService};
 use livekit::SimulateScenario;
 
 /// Top menu bar: Simulate / Publish / Debug actions, all sent to the service.
 pub struct TopMenuBar<'a> {
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
 }
 
 impl egui::Widget for TopMenuBar<'_> {

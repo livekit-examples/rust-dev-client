@@ -1,4 +1,4 @@
-use crate::connection::ConnCtx;
+use crate::room::RoomContext;
 use crate::service::LkService;
 use crate::ui::status_badge::StatusBadge;
 use livekit::prelude::*;
@@ -87,7 +87,7 @@ impl HandlersState {
     /// The handler half of the tab: the register form plus one card per
     /// registered handler. Unregister is raised by [`RpcHandlerCard`] and
     /// applied here after the loop.
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &ConnCtx, room: &Room) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &RoomContext, room: &Room) {
         ui.label(egui::RichText::new("Handlers").strong());
 
         let mut do_register = false;
@@ -166,11 +166,11 @@ impl HandlersState {
 }
 
 /// Widget: the RPC tab (send form, handler registration, invocation log) inside
-/// a scroll area. Borrows the persistent [`RpcUiState`] plus the connection
-/// context, and composes [`RpcSendForm`] and [`RpcHandlerCard`].
+/// a scroll area. Borrows the persistent [`RpcUiState`] plus the room context,
+/// and composes [`RpcSendForm`] and [`RpcHandlerCard`].
 pub struct RpcPanel<'a> {
     pub state: &'a mut RpcUiState,
-    pub ctx: &'a ConnCtx<'a>,
+    pub ctx: &'a RoomContext<'a>,
 }
 
 impl egui::Widget for RpcPanel<'_> {
