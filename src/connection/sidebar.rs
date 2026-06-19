@@ -87,10 +87,6 @@ impl egui::Widget for ConnectionControls<'_> {
                 }
             });
 
-            if ui.button("E2eeKeyRatchet").clicked() {
-                let _ = ctx.service.send(AsyncCmd::E2eeKeyRatchet);
-            }
-
             if let Some(err) = connection_failure {
                 ui.add(StatusBadge::error(err));
             }

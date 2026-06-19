@@ -36,6 +36,9 @@ fn simulate_menu(ui: &mut egui::Ui, service: &LkService) {
                 let _ = service.send(AsyncCmd::SimulateScenario { scenario });
             }
         }
+        if ui.button("E2eeKeyRatchet").clicked() {
+            let _ = service.send(AsyncCmd::E2eeKeyRatchet);
+        }
     });
 }
 
