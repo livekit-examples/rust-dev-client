@@ -72,6 +72,7 @@ pub struct ConnectView {
     key: String,
     auto_subscribe: bool,
     enable_e2ee: bool,
+    show_secrets: bool,
 }
 
 impl Default for ConnectView {
@@ -87,6 +88,7 @@ impl Default for ConnectView {
             key: String::new(),
             auto_subscribe: true,
             enable_e2ee: false,
+            show_secrets: false,
         }
     }
 }
@@ -202,24 +204,39 @@ impl egui::Widget for ConnectForm<'_> {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let toggle = ui
+                        .add(egui::Button::selectable(view.show_secrets, "👁"))
+                        .on_hover_text("Show/hide secrets");
+                    if toggle.clicked() {
+                        view.show_secrets = !view.show_secrets;
+                    }
+                });
             });
             ui.add_space(8.0);
+
+            // Mask the secret fields (token / API key / secret / E2EE key) unless
+            // the eye toggle above is on.
+            let mask = !view.show_secrets;
 
             // Scope each method's fields under a distinct id so switching tabs
             // is seen as a layout change, not an unstable widget id (egui warns
             // when a rect's id changes between passes under the same parent).
             ui.push_id(view.method, |ui| match view.method {
                 AuthMethod::Token => {
-                    ui.add(LabeledTextEdit::singleline("Token", &mut view.token));
+                    ui.add(LabeledTextEdit::singleline("Token", &mut view.token).password(mask));
                     ui.add_space(8.0);
                 }
                 AuthMethod::ApiKey => {
                     ui.columns(2, |columns| {
-                        columns[0].add(LabeledTextEdit::singleline("API Key", &mut view.api_key));
-                        columns[1].add(LabeledTextEdit::singleline(
-                            "API Secret",
-                            &mut view.api_secret,
-                        ));
+                        columns[0].add(
+                            LabeledTextEdit::singleline("API Key", &mut view.api_key)
+                                .password(mask),
+                        );
+                        columns[1].add(
+                            LabeledTextEdit::singleline("API Secret", &mut view.api_secret)
+                                .password(mask),
+                        );
                     });
                     ui.add_space(8.0);
                     ui.columns(2, |columns| {
@@ -231,7 +248,9 @@ impl egui::Widget for ConnectForm<'_> {
             });
 
             ui.add(
-                LabeledTextEdit::singleline("E2EE Key", &mut view.key).enabled(view.enable_e2ee),
+                LabeledTextEdit::singleline("E2EE Key", &mut view.key)
+                    .enabled(view.enable_e2ee)
+                    .password(mask),
             );
             ui.add_space(8.0);
 

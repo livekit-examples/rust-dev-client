@@ -12,6 +12,7 @@ pub struct LabeledTextEdit<'a> {
     horizontal: bool,
     desired_width: Option<f32>,
     enabled: bool,
+    password: bool,
 }
 
 impl<'a> LabeledTextEdit<'a> {
@@ -22,6 +23,7 @@ impl<'a> LabeledTextEdit<'a> {
             horizontal: false,
             desired_width: None,
             enabled: true,
+            password: false,
         }
     }
 
@@ -40,6 +42,12 @@ impl<'a> LabeledTextEdit<'a> {
         self.enabled = enabled;
         self
     }
+
+    /// Mask the field's contents (for secrets). Defaults to visible.
+    pub fn password(mut self, password: bool) -> Self {
+        self.password = password;
+        self
+    }
 }
 
 impl Widget for LabeledTextEdit<'_> {
@@ -47,7 +55,8 @@ impl Widget for LabeledTextEdit<'_> {
         let add_contents = move |ui: &mut Ui| {
             let label = ui.label(self.label.small());
             let edit = TextEdit::singleline(self.text)
-                .desired_width(self.desired_width.unwrap_or(f32::INFINITY));
+                .desired_width(self.desired_width.unwrap_or(f32::INFINITY))
+                .password(self.password);
             ui.add_enabled(self.enabled, edit).labelled_by(label.id)
         };
 
