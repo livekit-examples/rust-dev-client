@@ -53,13 +53,20 @@ impl RoomWindow {
         window
     }
 
-    /// Connect (or reconnect) with the settings this window was opened with.
     fn connect(&mut self) {
+        let token = match self.request.auth.access_token() {
+            Ok(token) => token,
+            Err(err) => {
+                self.connecting = false;
+                self.connection_failure = Some(err);
+                return;
+            }
+        };
         self.connecting = true;
         self.connection_failure = None;
         let _ = self.service.send(AsyncCmd::RoomConnect {
             url: self.request.url.clone(),
-            token: self.request.token.clone(),
+            token,
             auto_subscribe: self.request.auto_subscribe,
             enable_e2ee: self.request.enable_e2ee,
             key: self.request.key.clone(),

@@ -4321,6 +4321,7 @@ dependencies = [
  "futures",
  "image",
  "livekit",
+ "livekit-api",
  "log",
  "parking_lot",
  "tokio",

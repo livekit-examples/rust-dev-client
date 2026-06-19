@@ -45,11 +45,9 @@ impl<'a> LabeledTextEdit<'a> {
 impl Widget for LabeledTextEdit<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let add_contents = move |ui: &mut Ui| {
-            let label = ui.label(self.label);
-            let mut edit = TextEdit::singleline(self.text);
-            if let Some(width) = self.desired_width {
-                edit = edit.desired_width(width);
-            }
+            let label = ui.label(self.label.small());
+            let edit = TextEdit::singleline(self.text)
+                .desired_width(self.desired_width.unwrap_or(f32::INFINITY));
             ui.add_enabled(self.enabled, edit).labelled_by(label.id)
         };
 

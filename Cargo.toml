@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full", "parking_lot"] }
 wgpu = "29.0"
 winit = { version = "0.30.12", features = [ "android-native-activity" ] }
 livekit = { version = "0.7.46", features = ["rustls-tls-native-roots"] }
+livekit-api = { version = "0.5.2", default-features = false, features = ["access-token"] }
 
 # For local development, use a path override to the rust-sdks repo:
 # livekit = { path = "../rust-sdks", features = ["rustls-tls-native-roots"] }
