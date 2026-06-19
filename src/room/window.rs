@@ -173,9 +173,11 @@ impl RoomWindow {
                 id: egui::Id::new(self.window_id),
             };
 
-            egui::Panel::top(ctx.id.with("top_panel")).show_inside(ui, |ui| {
-                ui.add(TopMenuBar { ctx: &ctx });
-            });
+            egui::Panel::top(ctx.id.with("top_panel"))
+                .frame(egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 6)))
+                .show_inside(ui, |ui| {
+                    ui.add(TopMenuBar { ctx: &ctx });
+                });
 
             egui::Panel::left(ctx.id.with("left_panel"))
                 .resizable(true)
