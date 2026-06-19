@@ -25,6 +25,7 @@ words:
   - tsid
   - unorm
   - videotexture
+  - viewports
   - webrtc
   - wgpu
   - winit

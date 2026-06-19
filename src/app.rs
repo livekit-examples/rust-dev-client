@@ -1,4 +1,4 @@
-use crate::connection_window::ConnectionWindow;
+use crate::connection::ConnectionWindow;
 use crate::launcher::{ConnectSettings, LauncherView};
 use parking_lot::Mutex;
 use std::sync::Arc;
