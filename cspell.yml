@@ -15,9 +15,12 @@ words:
   - egui
   - emath
   - epaint
+  - fira
+  - firacode
   - idents
   - livekit
   - oneshot
+  - opensans
   - rustls
   - subsec
   - texel

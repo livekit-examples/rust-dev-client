@@ -25,6 +25,8 @@ pub struct AppRoot {
 
 impl AppRoot {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        install_custom_fonts(&cc.egui_ctx);
+
         let async_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -96,4 +98,30 @@ impl eframe::App for AppRoot {
             );
         }
     }
+}
+
+pub fn install_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "opensans".to_owned(),
+        egui::FontData::from_static(include_bytes!("../resources/opensans.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "firacode".to_owned(),
+        egui::FontData::from_static(include_bytes!("../resources/firacode.ttf")).into(),
+    );
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "opensans".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "firacode".to_owned());
+
+    ctx.set_fonts(fonts);
 }
