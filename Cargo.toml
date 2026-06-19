@@ -25,7 +25,6 @@ livekit = { version = "0.7.46", features = ["rustls-tls-native-roots"] }
 [package.metadata.bundle]
 name = "LiveKit Client"
 identifier = "io.livekit.rust-dev-client"
-resources = ["src/moving-logo.png"]
 copyright = "2026 LiveKit, Inc."
 category = "public.app-category.developer-tools"
 
