@@ -1,5 +1,5 @@
 use egui::style::{Selection, WidgetVisuals, Widgets};
-use egui::{Context, Stroke, Style, Theme, Visuals};
+use egui::{Context, Spacing, Stroke, Style, Theme, Vec2, Visuals};
 
 mod colors;
 pub use colors::Palette;
@@ -106,7 +106,17 @@ fn style_for_theme(theme: Theme) -> Style {
         ..base.visuals
     };
 
-    Style { visuals, ..base }
+    let spacing = Spacing {
+        menu_margin: egui::Margin::symmetric(10, 6),
+        item_spacing: Vec2::new(8., 4.),
+        ..Default::default()
+    };
+
+    Style {
+        visuals,
+        spacing,
+        ..base
+    }
 }
 
 pub fn install_fonts(ctx: &Context) {
