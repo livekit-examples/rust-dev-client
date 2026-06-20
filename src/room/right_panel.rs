@@ -31,7 +31,8 @@ impl egui::Widget for RightPanel<'_> {
         ui.scope(|ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut state.tab, RightTab::Participants, "Participants");
-                ui.selectable_value(&mut state.tab, RightTab::Rpc, "RPC");
+                ui.selectable_value(&mut state.tab, RightTab::Rpc, "RPC")
+                    .on_hover_text("Remote Procedure Calls");
             });
             ui.separator();
 
