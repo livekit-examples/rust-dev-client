@@ -96,24 +96,25 @@ impl HandlersState {
                     let just_opened = add.clicked();
                     egui::Popup::from_toggle_button_response(&add)
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| self.register_form(ui, just_opened))
-                        .is_some_and(|r| r.inner)
-                })
-                .inner
+                        .show(|ui| self.register_form(ui, ctx, room, just_opened));
+                });
             });
-        // Apply the registration only after the cards render, so the handler set
-        // changes between frames at a single point (matching unregister) — this
-        // keeps widget ids stable across egui's layout passes.
-        let (_, header_ret, _) = header.body(|ui| self.handler_cards(ui, ctx, room));
-        if header_ret.inner {
-            self.register(ctx.service, room);
-        }
+        // The registration is applied inside the popup, before the cards render,
+        // so both of egui's layout passes see the same handler set on the frame a
+        // handler is added (deferring it to after `body` would render N cards in
+        // pass 1 and N+1 in pass 2, tripping the id-stability check).
+        header.body(|ui| self.handler_cards(ui, ctx, room));
     }
 
     /// The register popup's contents: a topic field and a Register button
-    /// (disabled while the topic is empty or already registered). Returns whether
-    /// a registration was requested; the caller applies it after rendering.
-    fn register_form(&mut self, ui: &mut egui::Ui, focus_topic: bool) -> bool {
+    /// (disabled while the topic is empty or already registered).
+    fn register_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &RoomContext,
+        room: &Room,
+        focus_topic: bool,
+    ) {
         let mut do_register = false;
         ui.horizontal(|ui| {
             let resp = ui.add(
@@ -137,9 +138,9 @@ impl HandlersState {
             }
         });
         if do_register {
+            self.register(ctx.service, room);
             ui.close();
         }
-        do_register
     }
 
     /// One [`RpcHandlerCard`] per registered handler; applies any unregister
