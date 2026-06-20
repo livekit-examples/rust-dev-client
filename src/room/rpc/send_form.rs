@@ -62,10 +62,10 @@ impl egui::Widget for RpcSendForm<'_> {
 
             ui.horizontal(|ui| {
                 ui.label("Payload:");
-                if ui.small_button("Hello").clicked() {
+                if ui.button("Hello").clicked() {
                     state.payload = "Hello world".to_string();
                 }
-                if ui.small_button("20k").clicked() {
+                if ui.button("20k").clicked() {
                     state.payload = "X".repeat(20_000);
                 }
             });

@@ -90,7 +90,7 @@ impl HandlersState {
             .show_header(ui, |ui| {
                 ui.label(format!("Handlers ({})", self.entries.len()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let add = ui.small_button("➕").on_hover_text("Register handler");
+                    let add = ui.button("➕").on_hover_text("Register handler");
                     // The popup body only renders while open, so a click on the
                     // button here means it was just opened — focus the field then.
                     let just_opened = add.clicked();

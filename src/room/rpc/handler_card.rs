@@ -32,7 +32,7 @@ impl egui::Widget for RpcHandlerCard<'_> {
             ui.label(title);
             // Float the unregister control to the right of the header.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("➖").on_hover_text("Unregister").clicked() {
+                if ui.button("➖").on_hover_text("Unregister").clicked() {
                     *to_remove = Some(guard.method.clone());
                 }
             });
@@ -41,10 +41,10 @@ impl egui::Widget for RpcHandlerCard<'_> {
         let (_, header_response, _) = header.body(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Reply:");
-                if ui.small_button("Hello").clicked() {
+                if ui.button("Hello").clicked() {
                     guard.reply = "Hello world".to_string();
                 }
-                if ui.small_button("20k").clicked() {
+                if ui.button("20k").clicked() {
                     guard.reply = "X".repeat(20_000);
                 }
             });
