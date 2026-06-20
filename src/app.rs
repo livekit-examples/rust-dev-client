@@ -100,4 +100,3 @@ impl eframe::App for AppRoot {
         }
     }
 }
-

@@ -1,6 +1,6 @@
 use crate::room::RoomContext;
 use crate::service::LkService;
-use crate::ui::status_badge::StatusBadge;
+use egui::collapsing_header::CollapsingState;
 use livekit::prelude::*;
 use parking_lot::Mutex;
 use std::collections::{BTreeMap, VecDeque};
@@ -37,7 +37,6 @@ struct SendState {
 #[derive(Default)]
 struct HandlersState {
     register_method: String,
-    register_error: Option<String>,
     entries: BTreeMap<String, Arc<Mutex<HandlerEntry>>>,
 }
 
@@ -77,48 +76,87 @@ impl RpcUiState {
 
     pub fn on_disconnect(&mut self) {
         self.handlers.entries.clear();
-        self.handlers.register_error = None;
         self.send.in_flight = None;
         self.send.destination = None;
     }
 }
 
 impl HandlersState {
-    /// The handler half of the tab: the register form plus one card per
-    /// registered handler. Unregister is raised by [`RpcHandlerCard`] and
-    /// applied here after the loop.
+    /// The "Handlers" collapsible: a header with an "add" button that opens the
+    /// register popup, and a body listing one [`RpcHandlerCard`] per handler.
     fn show(&mut self, ui: &mut egui::Ui, ctx: &RoomContext, room: &Room) {
-        ui.label(egui::RichText::new("Handlers").strong());
+        let header_id = ctx.id.with("rpc_handlers_section");
+        let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
+            .show_header(ui, |ui| {
+                ui.label(format!("Handlers ({})", self.entries.len()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let add = ui.small_button("➕").on_hover_text("Register handler");
+                    // The popup body only renders while open, so a click on the
+                    // button here means it was just opened — focus the field then.
+                    let just_opened = add.clicked();
+                    egui::Popup::from_toggle_button_response(&add)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| self.register_form(ui, just_opened))
+                        .is_some_and(|r| r.inner)
+                })
+                .inner
+            });
+        // Apply the registration only after the cards render, so the handler set
+        // changes between frames at a single point (matching unregister) — this
+        // keeps widget ids stable across egui's layout passes.
+        let (_, header_ret, _) = header.body(|ui| self.handler_cards(ui, ctx, room));
+        if header_ret.inner {
+            self.register(ctx.service, room);
+        }
+    }
 
+    /// The register popup's contents: a topic field and a Register button
+    /// (disabled while the topic is empty or already registered). Returns whether
+    /// a registration was requested; the caller applies it after rendering.
+    fn register_form(&mut self, ui: &mut egui::Ui, focus_topic: bool) -> bool {
         let mut do_register = false;
         ui.horizontal(|ui| {
-            ui.label("Topic:");
-            let resp =
-                ui.add(egui::TextEdit::singleline(&mut self.register_method).desired_width(120.0));
-            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut self.register_method)
+                    .desired_width(120.0)
+                    .hint_text("Topic"),
+            );
+            if focus_topic {
+                resp.request_focus();
+            }
+            let topic = self.register_method.trim();
+            let can_register = !topic.is_empty() && !self.entries.contains_key(topic);
+            if can_register && resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 do_register = true;
             }
-            if ui.button("Register Handler").clicked() {
+            if ui
+                .add_enabled(can_register, egui::Button::new("Register"))
+                .clicked()
+            {
                 do_register = true;
             }
         });
-
         if do_register {
-            self.register(ctx.service, room);
+            ui.close();
         }
+        do_register
+    }
 
-        if let Some(err) = &self.register_error {
-            ui.add(StatusBadge::error(err));
-        }
-
+    /// One [`RpcHandlerCard`] per registered handler; applies any unregister
+    /// raised by a card after the loop.
+    fn handler_cards(&mut self, ui: &mut egui::Ui, ctx: &RoomContext, room: &Room) {
         let methods: Vec<String> = self.entries.keys().cloned().collect();
         let mut to_remove: Option<String> = None;
         for method in methods {
             let entry = self.entries.get(&method).unwrap().clone();
-            ui.add(RpcHandlerCard {
-                entry: &entry,
-                id: ctx.id,
-                to_remove: &mut to_remove,
+            // Scope each card's widget ids by its method so removing one doesn't
+            // shift the auto-generated ids of the others (egui id-stability).
+            ui.push_id(&method, |ui| {
+                ui.add(RpcHandlerCard {
+                    entry: &entry,
+                    id: ctx.id,
+                    to_remove: &mut to_remove,
+                });
             });
         }
 
@@ -130,38 +168,35 @@ impl HandlersState {
     }
 
     fn register(&mut self, service: &LkService, room: &Room) {
-        self.register_error = None;
         let method = self.register_method.trim().to_string();
-        if method.is_empty() {
-            self.register_error = Some("Topic is empty".to_string());
-        } else if let std::collections::btree_map::Entry::Vacant(slot) =
-            self.entries.entry(method.clone())
-        {
-            let entry = Arc::new(Mutex::new(HandlerEntry {
-                method: method.clone(),
-                reply: String::new(),
-                invocations: VecDeque::new(),
-                invocation_count: 0,
-            }));
-            let entry_for_cb = entry.clone();
-            let _guard = service.runtime().enter();
-            room.local_participant()
-                .register_rpc_method(method.clone(), move |data| {
-                    let entry_for_cb = entry_for_cb.clone();
-                    Box::pin(async move {
-                        let reply = {
-                            let mut g = entry_for_cb.lock();
-                            push_invocation(&mut g, &data);
-                            g.reply.clone()
-                        };
-                        Ok(reply)
-                    })
-                });
-            slot.insert(entry);
-            self.register_method.clear();
-        } else {
-            self.register_error = Some(format!("Handler already registered for '{}'", method));
-        }
+        // The Register button is disabled for empty or already-registered topics,
+        // so a duplicate here is a no-op rather than an error.
+        let std::collections::btree_map::Entry::Vacant(slot) = self.entries.entry(method.clone())
+        else {
+            return;
+        };
+        let entry = Arc::new(Mutex::new(HandlerEntry {
+            method: method.clone(),
+            reply: String::new(),
+            invocations: VecDeque::new(),
+            invocation_count: 0,
+        }));
+        let entry_for_cb = entry.clone();
+        let _guard = service.runtime().enter();
+        room.local_participant()
+            .register_rpc_method(method.clone(), move |data| {
+                let entry_for_cb = entry_for_cb.clone();
+                Box::pin(async move {
+                    let reply = {
+                        let mut g = entry_for_cb.lock();
+                        push_invocation(&mut g, &data);
+                        g.reply.clone()
+                    };
+                    Ok(reply)
+                })
+            });
+        slot.insert(entry);
+        self.register_method.clear();
     }
 }
 
@@ -184,13 +219,15 @@ impl egui::Widget for RpcPanel<'_> {
                         ui.label("Not connected");
                         return;
                     };
-                    ui.add(RpcSendForm {
-                        state: &mut state.send,
-                        ctx,
-                        room,
-                    });
-                    ui.add_space(8.0);
-                    ui.separator();
+                    egui::CollapsingHeader::new("Send RPC")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.add(RpcSendForm {
+                                state: &mut state.send,
+                                ctx,
+                                room,
+                            });
+                        });
                     state.handlers.show(ui, ctx, room);
                 });
         })

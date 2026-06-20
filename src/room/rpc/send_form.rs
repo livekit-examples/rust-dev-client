@@ -19,8 +19,6 @@ impl egui::Widget for RpcSendForm<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let RpcSendForm { state, ctx, room } = self;
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new("Send RPC").strong());
-
             let participants = room.remote_participants();
             let mut idents: Vec<ParticipantIdentity> = participants.keys().cloned().collect();
             idents.sort_by(|a, b| a.as_str().cmp(b.as_str()));
@@ -34,28 +32,26 @@ impl egui::Widget for RpcSendForm<'_> {
 
             ui.horizontal(|ui| {
                 ui.label("To:");
+                let has_participants = !idents.is_empty();
                 let combo_label = state
                     .destination
                     .as_ref()
                     .map(|i| i.as_str().to_string())
-                    .unwrap_or_else(|| {
-                        if idents.is_empty() {
-                            "(no remote participants)".to_string()
-                        } else {
-                            "(select)".to_string()
-                        }
-                    });
-                egui::ComboBox::from_id_salt(ctx.id.with("rpc_dest_combo"))
-                    .selected_text(combo_label)
-                    .show_ui(ui, |ui| {
-                        for ident in &idents {
-                            ui.selectable_value(
-                                &mut state.destination,
-                                Some(ident.clone()),
-                                ident.as_str(),
-                            );
-                        }
-                    });
+                    .unwrap_or_else(|| "Select Callee".to_string());
+                // Disable the combo when there's no one to call.
+                ui.add_enabled_ui(has_participants, |ui| {
+                    egui::ComboBox::from_id_salt(ctx.id.with("rpc_dest_combo"))
+                        .selected_text(combo_label)
+                        .show_ui(ui, |ui| {
+                            for ident in &idents {
+                                ui.selectable_value(
+                                    &mut state.destination,
+                                    Some(ident.clone()),
+                                    ident.as_str(),
+                                );
+                            }
+                        });
+                });
             });
 
             ui.add(
