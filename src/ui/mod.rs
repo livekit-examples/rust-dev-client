@@ -6,5 +6,5 @@ pub mod data_chart;
 pub mod labeled_field;
 pub mod prominent_button;
 pub mod status_badge;
-pub mod video_grid;
+pub mod track_grid;
 pub mod video_tile;

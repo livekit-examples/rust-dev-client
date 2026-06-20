@@ -8,7 +8,7 @@ pub mod participants;
 pub mod right_panel;
 pub mod rpc;
 pub mod status_bar;
-pub mod video_grid_view;
+pub mod track_grid_view;
 pub mod window;
 
 pub use context::RoomContext;

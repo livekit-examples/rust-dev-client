@@ -3,22 +3,20 @@ use crate::room::RoomContext;
 use crate::room::data_track::{
     LocalDataTrackTile, LocalDataTrackWidget, RemoteDataTrackTile, RemoteDataTrackWidget,
 };
-use crate::ui::{video_grid::VideoGrid, video_tile::VideoTile};
+use crate::ui::{track_grid::TrackGrid, video_tile::VideoTile};
 use livekit::prelude::*;
 use std::collections::HashMap;
 
-/// Central grid of all track tiles (video + data). When disconnected it shows a
-/// row of placeholder frames.
-pub struct VideoGridView<'a> {
+pub struct TrackGridView<'a> {
     pub ctx: &'a RoomContext<'a>,
     pub video_renderers: &'a HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
     pub local_data_tracks: &'a mut [LocalDataTrackTile],
     pub remote_data_tracks: &'a [RemoteDataTrackTile],
 }
 
-impl egui::Widget for VideoGridView<'_> {
+impl egui::Widget for TrackGridView<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let VideoGridView {
+        let TrackGridView {
             ctx,
             video_renderers,
             local_data_tracks,
@@ -41,12 +39,12 @@ impl egui::Widget for VideoGridView<'_> {
             egui::ScrollArea::vertical()
                 .id_salt(ctx.id.with("central_scroll"))
                 .show(ui, |ui| {
-                    VideoGrid::new(ctx.id.with("default_grid"))
+                    TrackGrid::new(ctx.id.with("default_grid"))
                         .max_columns(6)
                         .show(ui, |ui| {
                             if let Some(room) = ctx.room {
                                 for ((participant_id, _), video_renderer) in video_renderers {
-                                    ui.video_frame(|ui| {
+                                    ui.track_frame(|ui| {
                                         if let Some(p) =
                                             room.remote_participants().get(participant_id)
                                         {
@@ -71,19 +69,19 @@ impl egui::Widget for VideoGridView<'_> {
                                 }
 
                                 for tile in &mut *local_data_tracks {
-                                    ui.video_frame(|ui| {
+                                    ui.track_frame(|ui| {
                                         ui.add(LocalDataTrackWidget::new(tile));
                                     });
                                 }
 
                                 for tile in remote_data_tracks {
-                                    ui.video_frame(|ui| {
+                                    ui.track_frame(|ui| {
                                         ui.add(RemoteDataTrackWidget::new(tile));
                                     });
                                 }
                             } else {
                                 for _ in 0..5 {
-                                    ui.video_frame(|ui| {
+                                    ui.track_frame(|ui| {
                                         egui::Frame::new()
                                             .fill(ui.style().visuals.code_bg_color)
                                             .show(ui, |ui| {

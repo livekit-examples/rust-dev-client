@@ -6,7 +6,7 @@ use crate::{
     room::menu_bar::TopMenuBar,
     room::right_panel::{RightPanel, RightPanelState},
     room::status_bar::{StatusBar, StatusBarActions},
-    room::video_grid_view::VideoGridView,
+    room::track_grid_view::TrackGridView,
     service::{AsyncCmd, LkService, UiCmd},
 };
 use livekit::prelude::*;
@@ -215,7 +215,7 @@ impl RoomWindow {
                 });
 
             egui::CentralPanel::default().show_inside(ui, |ui| {
-                ui.add(VideoGridView {
+                ui.add(TrackGridView {
                     ctx: &ctx,
                     video_renderers: &self.video_renderers,
                     local_data_tracks: &mut self.local_data_tracks,
