@@ -66,11 +66,15 @@ fn debug_menu(ui: &mut egui::Ui, service: &LkService) {
 }
 
 fn help_menu(ui: &mut egui::Ui) {
+    const COMMUNITY_URL: &str = "https://community.livekit.io/c/robotics";
     const DOCS_URL: &str = "https://docs.livekit.io/";
     const ISSUES_URL: &str = "https://github.com/livekit-examples/rust-dev-client/issues";
 
     ui.menu_button("Help", |ui| {
-        if ui.button("LiveKit Documentation").clicked() {
+        if ui.button("Developer Community").clicked() {
+            ui.ctx().open_url(egui::OpenUrl::new_tab(COMMUNITY_URL));
+        }
+        if ui.button("Documentation").clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
         }
         if ui.button("Report an Issue").clicked() {
