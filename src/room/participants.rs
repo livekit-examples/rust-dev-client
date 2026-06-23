@@ -38,7 +38,8 @@ impl egui::Widget for ParticipantsPanel<'_> {
     }
 }
 
-/// One participant: identity header followed by a row per track publication.
+/// One participant: a collapsible section titled by its identity, with a row per
+/// track publication in the body.
 struct ParticipantCard<'a> {
     ctx: &'a RoomContext<'a>,
     participant: &'a RemoteParticipant,
@@ -47,20 +48,22 @@ struct ParticipantCard<'a> {
 impl egui::Widget for ParticipantCard<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let ParticipantCard { ctx, participant } = self;
-        ui.vertical(|ui| {
-            // Sorted keys avoid flicker in immediate mode.
-            let tracks = participant.track_publications();
-            let mut sorted_tracks = tracks.keys().cloned().collect::<Vec<TrackSid>>();
-            sorted_tracks.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        let identity = participant.identity().0;
+        egui::CollapsingHeader::new(identity.as_str())
+            .id_salt(ctx.id.with(("participant", identity.as_str())))
+            .default_open(true)
+            .show(ui, |ui| {
+                // Sorted keys avoid flicker in immediate mode.
+                let tracks = participant.track_publications();
+                let mut sorted_tracks = tracks.keys().cloned().collect::<Vec<TrackSid>>();
+                sorted_tracks.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
-            ui.monospace(&participant.identity().0);
-            for tsid in sorted_tracks {
-                let publication = tracks.get(&tsid).unwrap().clone();
-                ui.add(TrackPublicationRow { ctx, publication });
-            }
-            ui.separator();
-        })
-        .response
+                for tsid in sorted_tracks {
+                    let publication = tracks.get(&tsid).unwrap().clone();
+                    ui.add(TrackPublicationRow { ctx, publication });
+                }
+            })
+            .header_response
     }
 }
 
