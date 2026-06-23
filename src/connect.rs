@@ -77,12 +77,20 @@ pub struct ConnectView {
 
 impl Default for ConnectView {
     fn default() -> Self {
+        // Seed the fields from the standard LiveKit env vars when present, so a
+        // configured shell or `.env` pre-fills the form instead of the defaults.
+        let env_or = |key: &str, default: &str| {
+            std::env::var(key)
+                .ok()
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| default.to_string())
+        };
         Self {
             method: AuthMethod::default(),
-            url: "ws://localhost:7880".to_string(),
-            token: String::new(),
-            api_key: "devkey".to_string(),
-            api_secret: "secret".to_string(),
+            url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
+            token: env_or("LIVEKIT_TOKEN", ""),
+            api_key: env_or("LIVEKIT_API_KEY", "devkey"),
+            api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
             room: "dev-room".to_string(),
             key: String::new(),
