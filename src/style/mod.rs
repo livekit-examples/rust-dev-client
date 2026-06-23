@@ -129,8 +129,8 @@ pub fn install_fonts(ctx: &Context) {
     let mut fonts = egui::FontDefinitions::default();
 
     fonts.font_data.insert(
-        "opensans".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../resources/opensans.ttf")).into(),
+        "publicsans".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../resources/publicsans-regular.ttf")).into(),
     );
     fonts.font_data.insert(
         "firacode".to_owned(),
@@ -141,7 +141,7 @@ pub fn install_fonts(ctx: &Context) {
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default()
-        .insert(0, "opensans".to_owned());
+        .insert(0, "publicsans".to_owned());
     fonts
         .families
         .entry(egui::FontFamily::Monospace)
