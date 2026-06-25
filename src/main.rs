@@ -20,8 +20,6 @@ fn main() {
         ..Default::default()
     };
 
-    let creator: eframe::AppCreator<'_> =
-        Box::new(|context| Ok(Box::new(AppRoot::new(context))));
-
+    let creator: eframe::AppCreator<'_> = Box::new(|context| Ok(Box::new(AppRoot::new(context))));
     eframe::run_native(APP_NAME, options, creator).unwrap();
 }

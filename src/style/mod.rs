@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use egui::style::{Selection, WidgetVisuals, Widgets, default_text_styles};
 use egui::{Context, FontId, Spacing, Stroke, Style, TextStyle, Theme, Vec2, Visuals};
 
@@ -130,7 +128,8 @@ pub fn install_fonts(ctx: &Context) {
 
     fonts.font_data.insert(
         "publicsans".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../resources/publicsans-regular.ttf")).into(),
+        egui::FontData::from_static(include_bytes!("../../resources/publicsans-regular.ttf"))
+            .into(),
     );
     fonts.font_data.insert(
         "firacode".to_owned(),
