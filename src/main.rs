@@ -1,21 +1,10 @@
-mod app;
-mod connect;
-mod media;
-mod room;
-mod service;
-mod style;
-mod ui;
-mod utils;
-
-static APP_NAME: &str = "LiveKit Client";
+use rust_dev_client::{APP_NAME, AppRoot};
 
 fn main() {
     env_logger::Builder::new()
         .filter_level(log::LevelFilter::Info)
         .parse_default_env()
         .init();
-
-    utils::watch_for_deadlocks();
 
     // FIXME: root window has to always be on top to prevent glitches with room windows.
 
@@ -32,7 +21,7 @@ fn main() {
     };
 
     let creator: eframe::AppCreator<'_> =
-        Box::new(|context| Ok(Box::new(app::AppRoot::new(context))));
+        Box::new(|context| Ok(Box::new(AppRoot::new(context))));
 
     eframe::run_native(APP_NAME, options, creator).unwrap();
 }

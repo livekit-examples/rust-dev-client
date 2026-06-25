@@ -4,6 +4,16 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+mod connect;
+mod media;
+mod room;
+mod service;
+mod style;
+mod ui;
+mod utils;
+
+pub static APP_NAME: &str = "LiveKit Client";
+
 /// A room window, shown as a deferred viewport so it repaints independently of
 /// the connect screen and of other rooms.
 struct WindowEntry {
@@ -25,8 +35,10 @@ pub struct AppRoot {
 
 impl AppRoot {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        crate::style::install_fonts(&cc.egui_ctx);
-        crate::style::install_style(&cc.egui_ctx);
+        utils::watch_for_deadlocks();
+
+        style::install_fonts(&cc.egui_ctx);
+        style::install_style(&cc.egui_ctx);
 
         let async_runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -46,7 +58,7 @@ impl AppRoot {
         let id = self.next_window_id;
         self.next_window_id += 1;
 
-        let title = format!("{} - {}", crate::APP_NAME, request.url);
+        let title = format!("{} - {}", APP_NAME, request.url);
         let window = RoomWindow::new(
             id,
             self.async_runtime.handle().clone(),
