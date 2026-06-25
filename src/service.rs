@@ -15,6 +15,7 @@ pub enum AsyncCmd {
         url: String,
         token: String,
         auto_subscribe: bool,
+        dynacast: bool,
         enable_e2ee: bool,
         key: String,
     },
@@ -138,6 +139,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 url,
                 token,
                 auto_subscribe,
+                dynacast,
                 enable_e2ee,
                 key,
             } => {
@@ -152,6 +154,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 let mut options = RoomOptions::default();
                 options.auto_subscribe = auto_subscribe;
+                options.dynacast = dynacast;
                 options.encryption = e2ee;
 
                 let res = Room::connect(&url, &token, options).await;

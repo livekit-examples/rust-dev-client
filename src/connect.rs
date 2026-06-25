@@ -47,6 +47,7 @@ pub struct ConnectSettings {
     pub auth: Auth,
     pub key: String,
     pub auto_subscribe: bool,
+    pub dynacast: bool,
     pub enable_e2ee: bool,
 }
 
@@ -71,6 +72,7 @@ pub struct ConnectView {
     room: String,
     key: String,
     auto_subscribe: bool,
+    dynacast: bool,
     enable_e2ee: bool,
     show_secrets: bool,
 }
@@ -95,6 +97,7 @@ impl Default for ConnectView {
             room: "dev-room".to_string(),
             key: String::new(),
             auto_subscribe: true,
+            dynacast: true,
             enable_e2ee: false,
             show_secrets: false,
         }
@@ -132,6 +135,7 @@ impl ConnectView {
             auth,
             key: self.key.clone(),
             auto_subscribe: self.auto_subscribe,
+            dynacast: self.dynacast,
             enable_e2ee: self.enable_e2ee,
         }
     }
@@ -264,6 +268,7 @@ impl egui::Widget for ConnectForm<'_> {
 
             ui.checkbox(&mut view.enable_e2ee, "Enable E2EE");
             ui.checkbox(&mut view.auto_subscribe, "Auto Subscribe");
+            ui.checkbox(&mut view.dynacast, "Dynacast");
 
             ui.add_space(8.0);
         })

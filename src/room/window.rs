@@ -68,6 +68,7 @@ impl RoomWindow {
             url: self.request.url.clone(),
             token,
             auto_subscribe: self.request.auto_subscribe,
+            dynacast: self.request.dynacast,
             enable_e2ee: self.request.enable_e2ee,
             key: self.request.key.clone(),
         });
