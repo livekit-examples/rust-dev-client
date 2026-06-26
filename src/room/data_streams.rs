@@ -1,8 +1,8 @@
 use crate::room::RoomContext;
 use crate::service::{AsyncCmd, DataStreamPayload, LkService};
-use crate::style::Palette;
 use crate::ui::status_badge::StatusBadge;
-use egui::{RichText, Theme};
+use egui::collapsing_header::CollapsingState;
+use egui::RichText;
 use livekit::prelude::*;
 use livekit::{ByteStreamReader, StreamReader, TakeCell, TextStreamReader};
 use parking_lot::Mutex;
@@ -68,7 +68,6 @@ pub struct DataStreamsUiState {
     // Subscribe section
     sub_topic: String,
     sub_kind: StreamKind,
-    sub_error: Option<String>,
     subscriptions: BTreeMap<(String, StreamKind), Arc<Mutex<TopicEntry>>>,
 }
 
@@ -84,7 +83,6 @@ impl Default for DataStreamsUiState {
             send_result: None,
             sub_topic: String::new(),
             sub_kind: StreamKind::Text,
-            sub_error: None,
             subscriptions: BTreeMap::new(),
         }
     }
@@ -160,8 +158,6 @@ impl DataStreamsUiState {
     }
 
     fn show_send(&mut self, ui: &mut egui::Ui, ctx: &RoomContext, room: &Room) {
-        ui.label(RichText::new("Send Data Stream").strong());
-
         ui.horizontal(|ui| {
             ui.label("Kind:");
             ui.radio_value(&mut self.send_kind, StreamKind::Text, "Text");
@@ -285,52 +281,84 @@ impl DataStreamsUiState {
         });
     }
 
-    fn show_subscribe(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new("Subscriptions").strong());
+    /// The "Subscriptions" collapsible: a header with an "add" button that opens
+    /// the add popup, and a body listing one card per subscription. Mirrors
+    /// [`crate::room::rpc`]'s `HandlersState::show`.
+    fn show_subscriptions(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
+        let header_id = ctx.id.with("ds_subscriptions_section");
+        let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
+            .show_header(ui, |ui| {
+                ui.label(format!("Subscriptions ({})", self.subscriptions.len()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let add = ui.button("➕").on_hover_text("Add subscription");
+                    // The popup body only renders while open, so a click on the
+                    // button here means it was just opened — focus the field then.
+                    let just_opened = add.clicked();
+                    egui::Popup::from_toggle_button_response(&add)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| self.add_form(ui, just_opened));
+                });
+            });
+        // The add is applied inside the popup, before the cards render, so both of
+        // egui's layout passes see the same subscription set on the frame one is
+        // added (deferring it to after `body` would render N cards in pass 1 and
+        // N+1 in pass 2, tripping the id-stability check).
+        header.body(|ui| self.subscription_cards(ui, ctx));
+    }
 
+    /// The add popup's contents: a topic field, the Text/Bytes kind, and an Add
+    /// button (disabled while the topic is empty or already subscribed).
+    fn add_form(&mut self, ui: &mut egui::Ui, focus_topic: bool) {
         let mut do_add = false;
         ui.horizontal(|ui| {
-            ui.label("Topic:");
-            let resp = ui.add(egui::TextEdit::singleline(&mut self.sub_topic).desired_width(120.0));
-            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                do_add = true;
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut self.sub_topic)
+                    .desired_width(120.0)
+                    .hint_text("Topic"),
+            );
+            if focus_topic {
+                resp.request_focus();
             }
             ui.radio_value(&mut self.sub_kind, StreamKind::Text, "Text");
             ui.radio_value(&mut self.sub_kind, StreamKind::Bytes, "Bytes");
-            if ui.button("Add").clicked() {
+
+            let topic = self.sub_topic.trim();
+            let can_add =
+                !topic.is_empty() && !self.subscriptions.contains_key(&(topic.to_string(), self.sub_kind));
+            if can_add && resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                do_add = true;
+            }
+            if ui.add_enabled(can_add, egui::Button::new("Add")).clicked() {
                 do_add = true;
             }
         });
-
         if do_add {
-            self.sub_error = None;
-            let topic = self.sub_topic.trim().to_string();
-            let key = (topic.clone(), self.sub_kind);
-            if topic.is_empty() {
-                self.sub_error = Some("Topic is empty".to_string());
-            } else if self.subscriptions.contains_key(&key) {
-                self.sub_error =
-                    Some(format!("Already subscribed to '{}' ({})", topic, self.sub_kind.label()));
-            } else {
-                self.subscriptions.insert(
-                    key,
-                    Arc::new(Mutex::new(TopicEntry {
-                        topic,
-                        kind: self.sub_kind,
-                        received: VecDeque::new(),
-                        count: 0,
-                    })),
-                );
-                self.sub_topic.clear();
-            }
-        }
-
-        if let Some(err) = &self.sub_error {
-            ui.add(StatusBadge::error(err.clone()));
+            self.add_subscription();
+            ui.close();
         }
     }
 
-    fn show_subscription_cards(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
+    fn add_subscription(&mut self) {
+        let topic = self.sub_topic.trim().to_string();
+        let key = (topic.clone(), self.sub_kind);
+        // The Add button is disabled for empty or already-subscribed topics, so a
+        // duplicate here is a no-op rather than an error.
+        if topic.is_empty() || self.subscriptions.contains_key(&key) {
+            return;
+        }
+        self.subscriptions.insert(
+            key,
+            Arc::new(Mutex::new(TopicEntry {
+                topic,
+                kind: self.sub_kind,
+                received: VecDeque::new(),
+                count: 0,
+            })),
+        );
+        self.sub_topic.clear();
+    }
+
+    fn subscription_cards(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
         let keys: Vec<(String, StreamKind)> = self.subscriptions.keys().cloned().collect();
         let mut to_remove: Option<(String, StreamKind)> = None;
 
@@ -403,11 +431,10 @@ impl egui::Widget for DataStreamsPanel<'_> {
                         ui.label("Not connected");
                         return;
                     };
-                    state.show_send(ui, ctx, room);
-                    ui.add_space(8.0);
-                    ui.separator();
-                    state.show_subscribe(ui);
-                    state.show_subscription_cards(ui, ctx);
+                    egui::CollapsingHeader::new("Send Data Stream")
+                        .default_open(true)
+                        .show(ui, |ui| state.show_send(ui, ctx, room));
+                    state.show_subscriptions(ui, ctx);
                 });
         })
         .response
