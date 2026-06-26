@@ -53,7 +53,10 @@ impl egui::Widget for ParticipantCard<'_> {
             .id_salt(ctx.id.with(("participant", identity.as_str())))
             .default_open(true)
             .show(ui, |ui| {
-                ui.weak(format!("Client protocol: {}", participant.client_protocol()));
+                ui.weak(format!(
+                    "Client protocol: {}",
+                    participant.client_protocol()
+                ));
                 let caps = participant.capabilities();
                 let caps_str = if caps.is_empty() {
                     "(none)".to_string()

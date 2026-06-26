@@ -312,8 +312,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 if let Some(state) = running_state.as_ref() {
                     let local = state.room.local_participant();
                     let ui_tx = inner.ui_tx.clone();
-                    let destination_identities =
-                        destination.map(|i| vec![i]).unwrap_or_default();
+                    let destination_identities = destination.map(|i| vec![i]).unwrap_or_default();
                     tokio::spawn(async move {
                         let result = match payload {
                             DataStreamPayload::Text(text) => {

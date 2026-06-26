@@ -1,8 +1,8 @@
 use crate::room::RoomContext;
 use crate::service::{AsyncCmd, DataStreamPayload, LkService};
 use crate::ui::status_badge::StatusBadge;
-use egui::collapsing_header::CollapsingState;
 use egui::RichText;
+use egui::collapsing_header::CollapsingState;
 use livekit::prelude::*;
 use livekit::{ByteStreamReader, StreamReader, TakeCell, TextStreamReader};
 use parking_lot::Mutex;
@@ -323,8 +323,10 @@ impl DataStreamsUiState {
             ui.radio_value(&mut self.sub_kind, StreamKind::Bytes, "Bytes");
 
             let topic = self.sub_topic.trim();
-            let can_add =
-                !topic.is_empty() && !self.subscriptions.contains_key(&(topic.to_string(), self.sub_kind));
+            let can_add = !topic.is_empty()
+                && !self
+                    .subscriptions
+                    .contains_key(&(topic.to_string(), self.sub_kind));
             if can_add && resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 do_add = true;
             }
@@ -441,12 +443,7 @@ impl egui::Widget for DataStreamsPanel<'_> {
     }
 }
 
-fn push_received(
-    entry: &Arc<Mutex<TopicEntry>>,
-    sender: &str,
-    size: usize,
-    preview: String,
-) {
+fn push_received(entry: &Arc<Mutex<TopicEntry>>, sender: &str, size: usize, preview: String) {
     let mut g = entry.lock();
     g.count += 1;
     let n = g.count;
@@ -464,8 +461,10 @@ fn push_received(
 
 /// Parses a hex string into bytes, ignoring whitespace, commas and colons.
 fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
-    let cleaned: String =
-        s.chars().filter(|c| !c.is_whitespace() && *c != ',' && *c != ':').collect();
+    let cleaned: String = s
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ',' && *c != ':')
+        .collect();
     if !cleaned.len().is_multiple_of(2) {
         return Err("odd number of hex digits".to_string());
     }
@@ -485,9 +484,19 @@ fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
 fn bytes_preview(data: &[u8]) -> String {
     let shown = &data[..data.len().min(PREVIEW_BYTES)];
     let hex: String = shown.iter().map(|b| format!("{:02x} ", b)).collect();
-    let ellipsis = if data.len() > PREVIEW_BYTES { "..." } else { "" };
+    let ellipsis = if data.len() > PREVIEW_BYTES {
+        "..."
+    } else {
+        ""
+    };
     let text = String::from_utf8_lossy(shown);
-    format!("hex: {}{}\nutf8: {}{}", hex.trim_end(), ellipsis, text, ellipsis)
+    format!(
+        "hex: {}{}\nutf8: {}{}",
+        hex.trim_end(),
+        ellipsis,
+        text,
+        ellipsis
+    )
 }
 
 fn truncate_chars(s: &str, max_chars: usize) -> String {
