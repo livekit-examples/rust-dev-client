@@ -2,6 +2,7 @@
 //! state. Depends on the reusable toolkit in [`crate::ui`].
 
 pub mod context;
+pub mod data_streams;
 pub mod data_track;
 pub mod menu_bar;
 pub mod participants;

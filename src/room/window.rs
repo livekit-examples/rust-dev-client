@@ -97,6 +97,11 @@ impl RoomWindow {
             UiCmd::RpcSendResult { request_id, result } => {
                 self.right_panel.rpc.handle_send_result(request_id, result);
             }
+            UiCmd::DataStreamSendResult { request_id, result } => {
+                self.right_panel
+                    .data_streams
+                    .handle_send_result(request_id, result);
+            }
             UiCmd::RoomEvent { event } => {
                 log::info!("{:?}", event);
                 match event {
@@ -149,11 +154,36 @@ impl RoomWindow {
                         self.remote_data_tracks
                             .push(RemoteDataTrackTile::new(&self.runtime, track));
                     }
+                    RoomEvent::TextStreamOpened {
+                        reader,
+                        topic,
+                        participant_identity,
+                    } => {
+                        self.right_panel.data_streams.on_text_stream(
+                            reader,
+                            topic,
+                            participant_identity,
+                            &self.service,
+                        );
+                    }
+                    RoomEvent::ByteStreamOpened {
+                        reader,
+                        topic,
+                        participant_identity,
+                    } => {
+                        self.right_panel.data_streams.on_byte_stream(
+                            reader,
+                            topic,
+                            participant_identity,
+                            &self.service,
+                        );
+                    }
                     RoomEvent::Disconnected { reason: _ } => {
                         self.video_renderers.clear();
                         self.local_data_tracks.clear();
                         self.remote_data_tracks.clear();
                         self.right_panel.rpc.on_disconnect();
+                        self.right_panel.data_streams.on_disconnect();
                     }
                     _ => {}
                 }
