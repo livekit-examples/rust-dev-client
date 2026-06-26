@@ -53,6 +53,18 @@ impl egui::Widget for ParticipantCard<'_> {
             .id_salt(ctx.id.with(("participant", identity.as_str())))
             .default_open(true)
             .show(ui, |ui| {
+                ui.weak(format!("Client protocol: {}", participant.client_protocol()));
+                let caps = participant.capabilities();
+                let caps_str = if caps.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    caps.iter()
+                        .map(|c| format!("{:?}", c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                ui.weak(format!("Capabilities: {}", caps_str));
+
                 // Sorted keys avoid flicker in immediate mode.
                 let tracks = participant.track_publications();
                 let mut sorted_tracks = tracks.keys().cloned().collect::<Vec<TrackSid>>();
