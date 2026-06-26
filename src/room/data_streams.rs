@@ -2,7 +2,7 @@ use crate::room::RoomContext;
 use crate::service::{AsyncCmd, DataStreamPayload, LkService};
 use crate::style::Palette;
 use crate::ui::status_badge::StatusBadge;
-use egui::{Color32, RichText, Theme};
+use egui::{RichText, Theme};
 use livekit::prelude::*;
 use livekit::{ByteStreamReader, StreamReader, TakeCell, TextStreamReader};
 use parking_lot::Mutex;
@@ -39,8 +39,6 @@ struct ReceivedStream {
     sender: String,
     received_at: SystemTime,
     size: usize,
-    compressed: bool,
-    inline: bool,
     preview: String,
 }
 
@@ -130,13 +128,11 @@ impl DataStreamsUiState {
             return;
         };
         service.runtime().spawn(async move {
-            let compressed = reader.info().compressed;
-            let inline = reader.info().inline;
             let (size, preview) = match reader.read_all().await {
                 Ok(text) => (text.len(), truncate_chars(&text, PREVIEW_CHARS)),
                 Err(e) => (0, format!("<error: {}>", e)),
             };
-            push_received(&entry, identity.as_str(), size, compressed, inline, preview);
+            push_received(&entry, identity.as_str(), size, preview);
         });
     }
 
@@ -155,13 +151,11 @@ impl DataStreamsUiState {
             return;
         };
         service.runtime().spawn(async move {
-            let compressed = reader.info().compressed;
-            let inline = reader.info().inline;
             let (size, preview) = match reader.read_all().await {
                 Ok(data) => (data.len(), bytes_preview(data.as_ref())),
                 Err(e) => (0, format!("<error: {}>", e)),
             };
-            push_received(&entry, identity.as_str(), size, compressed, inline, preview);
+            push_received(&entry, identity.as_str(), size, preview);
         });
     }
 
@@ -337,7 +331,6 @@ impl DataStreamsUiState {
     }
 
     fn show_subscription_cards(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
-        let palette = palette_for(ui);
         let keys: Vec<(String, StreamKind)> = self.subscriptions.keys().cloned().collect();
         let mut to_remove: Option<(String, StreamKind)> = None;
 
@@ -378,10 +371,6 @@ impl DataStreamsUiState {
                                     format_ts(r.received_at),
                                 );
                                 ui.weak(RichText::new(meta).small());
-                                ui.horizontal(|ui| {
-                                    flag_label(ui, "inline", r.inline, &palette);
-                                    flag_label(ui, "compressed", r.compressed, &palette);
-                                });
                                 ui.add(egui::Label::new(RichText::new(&r.preview).monospace()));
                                 ui.separator();
                             }
@@ -429,8 +418,6 @@ fn push_received(
     entry: &Arc<Mutex<TopicEntry>>,
     sender: &str,
     size: usize,
-    compressed: bool,
-    inline: bool,
     preview: String,
 ) {
     let mut g = entry.lock();
@@ -441,8 +428,6 @@ fn push_received(
         sender: sender.to_string(),
         received_at: SystemTime::now(),
         size,
-        compressed,
-        inline,
         preview,
     });
     while g.received.len() > MAX_RECEIVED {
@@ -468,22 +453,6 @@ fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
         i += 2;
     }
     Ok(out)
-}
-
-fn palette_for(ui: &egui::Ui) -> Palette {
-    let theme = if ui.visuals().dark_mode { Theme::Dark } else { Theme::Light };
-    Palette::for_theme(theme)
-}
-
-/// Renders `<name>: Yes` (success) or `<name>: No` (serious) for a boolean v2
-/// flag. Plain text rather than a ✓/✗ glyph, since the bundled fonts don't carry
-/// those symbols (they'd render as missing-glyph boxes).
-fn flag_label(ui: &mut egui::Ui, name: &str, value: bool, palette: &Palette) {
-    let (mark, color): (&str, Color32) =
-        if value { ("Yes", palette.fg_success) } else { ("No", palette.fg_serious) };
-    ui.add(egui::Label::new(
-        RichText::new(format!("{}: {}", name, mark)).small().color(color),
-    ));
 }
 
 fn bytes_preview(data: &[u8]) -> String {
