@@ -1,4 +1,5 @@
 use crate::room::RoomContext;
+use crate::room::data_streams::{DataStreamsPanel, DataStreamsUiState};
 use crate::room::participants::ParticipantsPanel;
 use crate::room::rpc::{RpcPanel, RpcUiState};
 
@@ -7,6 +8,7 @@ enum RightTab {
     #[default]
     Participants,
     Rpc,
+    DataStreams,
 }
 
 /// Persistent state for the right panel, owned by the window so it survives
@@ -17,6 +19,7 @@ enum RightTab {
 pub struct RightPanelState {
     tab: RightTab,
     pub rpc: RpcUiState,
+    pub data_streams: DataStreamsUiState,
 }
 
 /// The right panel: a Participants / RPC tab selector and the active tab's view.
@@ -33,6 +36,8 @@ impl egui::Widget for RightPanel<'_> {
                 ui.selectable_value(&mut state.tab, RightTab::Participants, "Participants");
                 ui.selectable_value(&mut state.tab, RightTab::Rpc, "RPC")
                     .on_hover_text("Remote Procedure Calls");
+                ui.selectable_value(&mut state.tab, RightTab::DataStreams, "Data Streams")
+                    .on_hover_text("Send and subscribe to data streams");
             });
             ui.separator();
 
@@ -43,6 +48,12 @@ impl egui::Widget for RightPanel<'_> {
                 RightTab::Rpc => {
                     ui.add(RpcPanel {
                         state: &mut state.rpc,
+                        ctx,
+                    });
+                }
+                RightTab::DataStreams => {
+                    ui.add(DataStreamsPanel {
+                        state: &mut state.data_streams,
                         ctx,
                     });
                 }

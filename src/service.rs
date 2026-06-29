@@ -1,6 +1,6 @@
 use crate::media::{LogoTrack, SineParameters, SineTrack};
 use livekit::{
-    SimulateScenario,
+    SimulateScenario, StreamByteOptions, StreamTextOptions,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
     prelude::*,
     track::VideoQuality,
@@ -44,6 +44,20 @@ pub enum AsyncCmd {
         payload: String,
         request_id: u64,
     },
+    DataStreamSend {
+        request_id: u64,
+        topic: String,
+        destination: Option<ParticipantIdentity>,
+        payload: DataStreamPayload,
+    },
+}
+
+/// The body of an outgoing data stream send: already-decoded so the async side
+/// has no parsing to do (hex is parsed UI-side before dispatch).
+#[derive(Debug)]
+pub enum DataStreamPayload {
+    Text(String),
+    Bytes(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -61,6 +75,11 @@ pub enum UiCmd {
     RpcSendResult {
         request_id: u64,
         result: Result<String, RpcError>,
+    },
+    DataStreamSendResult {
+        request_id: u64,
+        /// `Ok` carries the new stream's id; `Err` a human-readable message.
+        result: Result<String, String>,
     },
 }
 
@@ -281,6 +300,47 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                             message: "Not connected".to_string(),
                             data: None,
                         }),
+                    });
+                }
+            }
+            AsyncCmd::DataStreamSend {
+                request_id,
+                topic,
+                destination,
+                payload,
+            } => {
+                if let Some(state) = running_state.as_ref() {
+                    let local = state.room.local_participant();
+                    let ui_tx = inner.ui_tx.clone();
+                    let destination_identities = destination.map(|i| vec![i]).unwrap_or_default();
+                    tokio::spawn(async move {
+                        let result = match payload {
+                            DataStreamPayload::Text(text) => {
+                                let options = StreamTextOptions {
+                                    topic,
+                                    destination_identities,
+                                    ..Default::default()
+                                };
+                                local.send_text(&text, options).await.map(|info| info.id)
+                            }
+                            DataStreamPayload::Bytes(bytes) => {
+                                let options = StreamByteOptions {
+                                    topic,
+                                    destination_identities,
+                                    ..Default::default()
+                                };
+                                local.send_bytes(bytes, options).await.map(|info| info.id)
+                            }
+                        };
+                        let _ = ui_tx.send(UiCmd::DataStreamSendResult {
+                            request_id,
+                            result: result.map_err(|e| e.to_string()),
+                        });
+                    });
+                } else {
+                    let _ = inner.ui_tx.send(UiCmd::DataStreamSendResult {
+                        request_id,
+                        result: Err("Not connected".to_string()),
                     });
                 }
             }
