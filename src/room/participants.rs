@@ -57,16 +57,6 @@ impl egui::Widget for ParticipantCard<'_> {
                     "Client protocol: {}",
                     participant.client_protocol()
                 ));
-                let caps = participant.capabilities();
-                let caps_str = if caps.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    caps.iter()
-                        .map(|c| format!("{:?}", c))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                };
-                ui.weak(format!("Capabilities: {}", caps_str));
 
                 // Sorted keys avoid flicker in immediate mode.
                 let tracks = participant.track_publications();
