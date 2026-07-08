@@ -32,7 +32,6 @@ jobs:
         run: cargo nextest run --profile ci --all-targets --no-tests warn
   bundle:
     name: Bundle (${{ matrix.os }})
-    needs: [test]
     strategy:
       fail-fast: false
       matrix:
