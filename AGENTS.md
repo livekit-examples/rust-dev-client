@@ -60,3 +60,17 @@
   - Be explicit when you are bypassing warnings
 - Always run cspell and fix spelling issues
   - If a flagged word is valid project terminology, add it to _cspell.yml_ and sort the list alphabetically
+
+## Release process
+
+- There is currently no automatic release process in place
+- To create a release
+  - Bump version in _Cargo.toml_ through a PR (e.g., Release v0.1.0)
+  - Create version tag (e.g., v0.1.0)
+  - Publish GitHub release with automatically generated changelog
+- Eventually this will be automated and builds for each platform will be attached to the release
+
+## Documentation
+
+- Attach tooltips to UI elements where doing so clarifies usage
+- As new features are added, list them concisely in the features list in _README.md_
