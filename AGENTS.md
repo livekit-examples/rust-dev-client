@@ -55,8 +55,8 @@
 ## Merge requirements
 
 - Always format using `cargo fmt`
-- Always run `cargo clippy` and fix issues
-  - Do not reach for `#[allow(...)]` to bypass lint unless it is unavoidable in the context
-  - Be explicit when you are bypassing lints
+- Always address all issues, both clippy and compiler warnings
+  - Do not reach for `#[allow(...)]` to bypass warnings unless it is unavoidable in the context
+  - Be explicit when you are bypassing warnings
 - Always run cspell and fix spelling issues
   - If a flagged word is valid project terminology, add it to _cspell.yml_ and sort the list alphabetically
