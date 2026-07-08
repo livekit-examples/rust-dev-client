@@ -22,6 +22,7 @@ words:
   - idents
   - livekit
   - noninteractive
+  - nutf8
   - oneshot
   - publicsans
   - rsplit

@@ -55,6 +55,8 @@
 ## Merge requirements
 
 - Always format using `cargo fmt`
-- Alway run `cargo clippy` and fix issues
+- Always run `cargo clippy` and fix issues
   - Do not reach for `#[allow(...)]` to bypass lint unless it is unavoidable in the context
   - Be explicit when you are bypassing lints
+- Always run cspell and fix spelling issues
+  - If a flagged word is valid project terminology, add it to _cspell.yml_ and sort the list alphabetically
