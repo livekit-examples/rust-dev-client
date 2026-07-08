@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -52,6 +52,15 @@ jobs:
         with: { tool: cargo-bundle@0.11.0 }
       - name: Bundle
         run: cargo bundle
+      - name: Upload Artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bundle-${{ matrix.os }}
+          path: |
+            target/debug/bundle/dmg/*.dmg
+            target/debug/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 1
   format-check:
     name: Format Check
     runs-on: ubuntu-latest
