@@ -79,7 +79,7 @@ jobs:
       - name: Clippy Check
         uses: clechasseur/rs-clippy-check@62ad100473a5e6513e86407b859091115ec89ae3 # v6.0.5
         with:
-          args: --all-targets -- -D warnings
+          args: --all-targets -- -D warnings --no-deps
   cspell:
     name: Cspell
     runs-on: ubuntu-latest
