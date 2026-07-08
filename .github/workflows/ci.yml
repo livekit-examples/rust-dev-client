@@ -63,7 +63,7 @@ jobs:
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       - name: Clippy Check
-        uses: clechasseur/rs-clippy-check@1e16925ceec49b64803a6abc5f6bbe79044c3bd4 # v6.0.4
+        uses: clechasseur/rs-clippy-check@62ad100473a5e6513e86407b859091115ec89ae3 # v6.0.5
   cspell:
     name: Cspell
     runs-on: ubuntu-latest
