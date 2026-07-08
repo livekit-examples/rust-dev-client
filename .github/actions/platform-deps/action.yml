@@ -1,0 +1,52 @@
+name: Install Platform Dependencies
+runs:
+  using: composite
+  steps:
+    - name: Disable man-db updates
+      if: runner.os == 'Linux'
+      shell: bash
+      run: sudo rm -f /var/lib/man-db/auto-update
+    # TODO: installation of Linux dependencies should be streamlined and
+    # documented at the SDK level.
+    - name: Update package index
+      if: runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update -y
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # lld: GNU ld cannot link libwebrtc.a on aarch64
+        # libssl-dev: only used by openssl-sys when the livekit crate's
+        #   native-tls feature is enabled (the rustls features don't need it)
+        # libglib2.0-dev: hard requirement of webrtc-sys build.rs
+        #   (glib-2.0/gobject-2.0/gio-2.0 headers, probed via pkg-config)
+        # libx11/xext/xfixes/xdamage/xrandr/xcomposite/drm/gbm/GL: DesktopCapturer.
+        #   Headers only — the shared libraries are dlopened at runtime through
+        #   lazy-load stubs, so they are not runtime dependencies.
+        sudo apt-get install -y --no-install-recommends \
+          lld \
+          libssl-dev \
+          libglib2.0-dev \
+          libx11-dev \
+          libxext-dev \
+          libxfixes-dev \
+          libxdamage-dev \
+          libxrandr-dev \
+          libxcomposite-dev \
+          libdrm-dev \
+          libgbm-dev \
+          libgl1-mesa-dev
+    - name: Install hardware acceleration headers (Linux x86_64)
+      if: runner.arch == 'X64' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        # libva-dev: VA-API H.264 encoder (Intel/AMD)
+        # nvidia-cuda-dev: CUDA headers for NVENC/NVDEC
+        sudo apt-get install -y --no-install-recommends libva-dev nvidia-cuda-dev
+
+        # nvidia-cuda-dev installs cuda.h under /usr/include, but build.rs only
+        # checks $CUDA_HOME/include/cuda.h (defaulting to /usr/local/cuda, which
+        # does not exist on hosted runners). Point CUDA_HOME at /usr so NVIDIA
+        # codec support is actually compiled in.
+        echo "CUDA_HOME=/usr" >> "$GITHUB_ENV"
