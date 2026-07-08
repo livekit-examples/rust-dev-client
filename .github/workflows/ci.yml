@@ -21,6 +21,8 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          rustflags: ""
       - name: Install Platform Dependencies
         uses: ./.github/actions/platform-deps
       - name: Install Nextest
@@ -41,6 +43,8 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          rustflags: ""
       - name: Install Platform Dependencies
         uses: ./.github/actions/platform-deps
       - name: Install cargo-bundle
@@ -56,6 +60,8 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          rustflags: ""
       - name: Format Check
         run: cargo fmt --check
   clippy:
@@ -66,8 +72,14 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup Rust Toolchain
         uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          rustflags: ""
+      - name: Install Platform Dependencies
+        uses: ./.github/actions/platform-deps
       - name: Clippy Check
         uses: clechasseur/rs-clippy-check@62ad100473a5e6513e86407b859091115ec89ae3 # v6.0.5
+        with:
+          args: --all-targets -- -D warnings
   cspell:
     name: Cspell
     runs-on: ubuntu-latest
