@@ -52,8 +52,9 @@
 - Avoid excessive nesting and prefer [`let-else`](https://doc.rust-lang.org/rust-by-example/flow_control/let_else.html)
 - Avoid long parameter lists; group related inputs into a purpose-built struct when it improves readability
 
-## Merge requirements
+## Contributing
 
+- Adhere to requirements in [_CONTRIBUTING.md_](./CONTRIBUTING.md)
 - Always format using `cargo fmt`
 - Always address all issues, both clippy and compiler warnings
   - Do not reach for `#[allow(...)]` to bypass warnings unless it is unavoidable in the context
