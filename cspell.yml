@@ -12,6 +12,7 @@ words:
   - debuginfo
   - deque
   - devkey
+  - dynacast
   - eframe
   - egui
   - emath
