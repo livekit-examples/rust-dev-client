@@ -52,7 +52,7 @@ pub struct ConnectSettings {
 }
 
 /// Which authentication method the connect form is editing.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 enum AuthMethod {
     #[default]
     ApiKey,
@@ -161,7 +161,7 @@ impl ConnectView {
 
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(16.0);
 
-        egui::Panel::bottom("connect_info").show_inside(ui, |ui| {
+        egui::Panel::bottom("connect_info").show(ui, |ui| {
             ui.horizontal(|ui| {
                 let version_string = format!("SDK Version: {}", livekit::SDK_VERSION);
                 let text = egui::RichText::new(version_string).text_style(egui::TextStyle::Small);
@@ -175,7 +175,7 @@ impl ConnectView {
         egui::Panel::bottom("connect_action")
             .frame(frame)
             .show_separator_line(false)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let connect =
                     ui.add(ProminentButton::new("Connect").enabled(self.is_connect_enabled()));
                 if connect.clicked() {
@@ -186,11 +186,9 @@ impl ConnectView {
                 }
             });
 
-        egui::CentralPanel::default()
-            .frame(frame)
-            .show_inside(ui, |ui| {
-                ui.add(ConnectForm { view: self });
-            });
+        egui::CentralPanel::default().frame(frame).show(ui, |ui| {
+            ui.add(ConnectForm { view: self });
+        });
 
         request
     }

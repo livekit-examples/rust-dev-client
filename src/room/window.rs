@@ -216,7 +216,7 @@ impl RoomWindow {
                     egui::Frame::central_panel(ui.style())
                         .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     ui.add(TopMenuBar { ctx: &ctx });
                 });
 
@@ -225,7 +225,7 @@ impl RoomWindow {
                     egui::Frame::central_panel(ui.style())
                         .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     ui.add(StatusBar {
                         ctx: &ctx,
                         connecting: self.connecting,
@@ -238,14 +238,14 @@ impl RoomWindow {
                 .frame(egui::Frame::central_panel(ui.style()).outer_margin(0.))
                 .resizable(true)
                 .size_range(20.0..=360.0)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     ui.add(RightPanel {
                         ctx: &ctx,
                         state: &mut self.right_panel,
                     });
                 });
 
-            egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.add(TrackGridView {
                     ctx: &ctx,
                     video_renderers: &self.video_renderers,
