@@ -9,7 +9,7 @@
 ## Building
 
 - `cargo run` builds and runs the app against the pinned, published LiveKit crates
-- To build against a local `rust-sdks` checkout, uncomment the `[patch.crates-io]` block in _Cargo.toml_ (see "Building against a local rust-sdks" in _README.md_)
+- To build against a local `rust-sdks` checkout, comment out the published `livekit`/`livekit-api` lines in _Cargo.toml_ and uncomment the `path` lines below them (see "Building against a local rust-sdks" in _README.md_)
 
 ## UI best practices
 
