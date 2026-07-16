@@ -37,16 +37,12 @@ To build against a local checkout of the [LiveKit Rust SDK](https://github.com/l
    ```sh
    git clone https://github.com/livekit/rust-sdks ../rust-sdks
    ```
-2. Uncomment the `[patch.crates-io]` block in `Cargo.toml` and comment in the upper appearance of `livekit` and `livekit-api` (edit the paths if your checkout lives elsewhere):
+2. In `Cargo.toml`, comment out the two published `livekit` / `livekit-api` lines and uncomment the `path` lines below them (edit the paths if your checkout lives elsewhere):
    ```toml
-   [patch.crates-io]
-   livekit = { path = "../rust-sdks/livekit" }
-   livekit-api = { path = "../rust-sdks/livekit-api" }
+   livekit = { path = "../rust-sdks/livekit", features = ["rustls-tls-native-roots"] }
+   livekit-api = { path = "../rust-sdks/livekit-api", default-features = false, features = ["access-token"] }
    ```
-3. If the checkout's crate version differs from `Cargo.lock`, bind it once so the patch takes effect — otherwise cargo prints `warning: patch ... was not used in the crate graph` and keeps the published version:
-   ```sh
-   cargo update -p livekit -p livekit-api
-   ```
-4. `cargo run` — and rust-analyzer — now build against the local sources.
+   These are plain `path` dependencies, so cargo re-resolves automatically — no `cargo update` needed.
+3. `cargo run` — and rust-analyzer — now build against the local sources.
 
-To return to the published crates, re-comment the block and run `git checkout Cargo.lock`.
+To return to the published crates, reverse step 2: uncomment the two version lines and comment the `path` lines back out.
