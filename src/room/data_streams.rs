@@ -3,6 +3,7 @@ use crate::service::{AsyncCmd, DataStreamPayload, LkService};
 use crate::ui::status_badge::StatusBadge;
 use egui::RichText;
 use egui::collapsing_header::CollapsingState;
+use futures::StreamExt;
 use livekit::prelude::*;
 use livekit::{ByteStreamReader, StreamReader, TakeCell, TextStreamReader};
 use parking_lot::Mutex;
@@ -33,13 +34,43 @@ impl StreamKind {
     }
 }
 
-/// A single received stream, rendered as a card.
+/// Progress/lifecycle of a received stream as it is read in the background.
+enum StreamStatus {
+    InProgress,
+    Complete,
+    Error(String),
+}
+
+/// What a received stream renders as, filled in as the payload arrives.
+enum StreamContent {
+    /// Text, or a non-file byte stream: an inline hex/utf8 preview string.
+    Preview(String),
+    /// A file-like byte stream, streamed to an anonymous temp file. The `file`
+    /// handle is set once the download completes; dropping it lets the OS reclaim
+    /// the (already-unlinked) temp file.
+    File { file: Arc<std::fs::File> },
+}
+
+/// A single received stream, rendered as a row (metadata line + preview/file box).
+/// A row is created as soon as the stream opens and updated live from the read task.
 struct ReceivedStream {
     n: u64,
     sender: String,
     received_at: SystemTime,
-    size: usize,
-    preview: String,
+    /// Bytes processed so far (or final size once complete).
+    size: u64,
+    /// Completion fraction (`0.0..=1.0`) from [`StreamProgress::percentage`], or
+    /// `None` for streams of unknown total size.
+    progress: Option<f32>,
+    status: StreamStatus,
+    /// Decided at open time from `info()`: file-like byte streams render as a file box.
+    is_file: bool,
+    /// File name / mime type from `info()` (used by the file box and the Save default).
+    file_name: String,
+    mime_type: String,
+    content: Option<StreamContent>,
+    /// Feedback from the most recent Save: `Ok(path)` or `Err(message)`.
+    save: Option<Result<String, String>>,
 }
 
 /// Accumulates streams received for one (topic, kind) subscription.
@@ -125,16 +156,56 @@ impl DataStreamsUiState {
         let Some(reader) = reader.take() else {
             return;
         };
+        // Text streams always render as an inline preview.
+        let total = reader.info().total_length;
+        let n = push_pending(
+            &entry,
+            identity.as_str(),
+            total,
+            false,
+            String::new(),
+            String::new(),
+        );
         service.runtime().spawn(async move {
-            let (size, preview) = match reader.read_all().await {
-                Ok(text) => (text.len(), truncate_chars(&text, PREVIEW_CHARS)),
-                Err(e) => (0, format!("<error: {}>", e)),
-            };
-            push_received(&entry, identity.as_str(), size, preview);
+            // We drive the reader as a `Stream` and derive the percentage from chunk lengths
+            // (the same fraction as `StreamProgress::percentage`). `progress()` is not used
+            // here: as a return-position `impl Trait` in a trait it borrows `&reader` for the
+            // life of the progress stream, which is incompatible with concurrently consuming
+            // the reader — and consuming it is exactly what lets us stream without buffering.
+            let mut reader = reader;
+            let mut text = String::new();
+            let mut processed = 0u64;
+            let mut error = None;
+            while let Some(chunk) = reader.next().await {
+                match chunk {
+                    Ok(s) => {
+                        processed += s.len() as u64;
+                        text.push_str(&s);
+                        update_progress(&entry, n, processed, total);
+                    }
+                    Err(e) => {
+                        error = Some(e.to_string());
+                        break;
+                    }
+                }
+            }
+            match error {
+                Some(e) => finish_error(&entry, n, e),
+                None => {
+                    let preview = truncate_chars(&text, PREVIEW_CHARS);
+                    update_row(&entry, n, |r| {
+                        r.size = processed;
+                        r.content = Some(StreamContent::Preview(preview));
+                        r.status = StreamStatus::Complete;
+                    });
+                }
+            }
         });
     }
 
-    /// Routes an incoming byte stream to a matching subscription (if any).
+    /// Routes an incoming byte stream to a matching subscription (if any). File-like byte
+    /// streams (see [`is_file_stream`]) are streamed to an anonymous temp file so a whole
+    /// file never needs to sit in memory; everything else keeps the inline hex/utf8 preview.
     pub fn on_byte_stream(
         &mut self,
         reader: TakeCell<ByteStreamReader>,
@@ -148,12 +219,63 @@ impl DataStreamsUiState {
         let Some(reader) = reader.take() else {
             return;
         };
+        let info = reader.info();
+        let total = info.total_length;
+        let is_file = is_file_stream(&info.name, &info.mime_type);
+        let file_name = default_file_name(&info.name, &info.id);
+        let mime_type = info.mime_type.clone();
+        let n = push_pending(
+            &entry,
+            identity.as_str(),
+            total,
+            is_file,
+            file_name,
+            mime_type,
+        );
+
         service.runtime().spawn(async move {
-            let (size, preview) = match reader.read_all().await {
-                Ok(data) => (data.len(), bytes_preview(data.as_ref())),
-                Err(e) => (0, format!("<error: {}>", e)),
-            };
-            push_received(&entry, identity.as_str(), size, preview);
+            // See the note in `on_text_stream`: we consume the reader directly and compute
+            // progress from chunk lengths rather than using `progress()`.
+            let mut reader = reader;
+            if is_file {
+                // File-like: stream chunks straight to an anonymous temp file so a whole file
+                // never sits in memory.
+                match stream_to_temp_file(&mut reader, &entry, n, total).await {
+                    Ok(file) => update_row(&entry, n, |r| {
+                        r.content = Some(StreamContent::File {
+                            file: Arc::new(file),
+                        });
+                        r.status = StreamStatus::Complete;
+                    }),
+                    Err(e) => finish_error(&entry, n, e),
+                }
+            } else {
+                // Non-file bytes: small dev payloads, kept in memory for an inline preview.
+                let mut buf = Vec::new();
+                let mut processed = 0u64;
+                let mut error = None;
+                while let Some(chunk) = reader.next().await {
+                    match chunk {
+                        Ok(b) => {
+                            processed += b.len() as u64;
+                            buf.extend_from_slice(&b);
+                            update_progress(&entry, n, processed, total);
+                        }
+                        Err(e) => {
+                            error = Some(e.to_string());
+                            break;
+                        }
+                    }
+                }
+                match error {
+                    Some(e) => finish_error(&entry, n, e),
+                    None => update_row(&entry, n, |r| {
+                        r.size = processed;
+                        r.content = Some(StreamContent::Preview(bytes_preview(&buf)));
+                        r.status = StreamStatus::Complete;
+                    }),
+                }
+            }
         });
     }
 
@@ -393,15 +515,7 @@ impl DataStreamsUiState {
                         .max_height(max_h)
                         .show(ui, |ui| {
                             for r in guard.received.iter() {
-                                let meta = format!(
-                                    "#{} | {} | {} | {}",
-                                    r.n,
-                                    r.sender,
-                                    format_size(r.size),
-                                    format_ts(r.received_at),
-                                );
-                                ui.weak(RichText::new(meta).small());
-                                ui.add(egui::Label::new(RichText::new(&r.preview).monospace()));
+                                ui.push_id(r.n, |ui| show_received(ui, ctx.service, &entry, r));
                                 ui.separator();
                             }
                         });
@@ -443,7 +557,16 @@ impl egui::Widget for DataStreamsPanel<'_> {
     }
 }
 
-fn push_received(entry: &Arc<Mutex<TopicEntry>>, sender: &str, size: usize, preview: String) {
+/// Pushes an `InProgress` row for a freshly opened stream and returns its sequence number
+/// `n`, which the background read task uses to update the same row via [`update_row`].
+fn push_pending(
+    entry: &Arc<Mutex<TopicEntry>>,
+    sender: &str,
+    total: Option<u64>,
+    is_file: bool,
+    file_name: String,
+    mime_type: String,
+) -> u64 {
     let mut g = entry.lock();
     g.count += 1;
     let n = g.count;
@@ -451,12 +574,218 @@ fn push_received(entry: &Arc<Mutex<TopicEntry>>, sender: &str, size: usize, prev
         n,
         sender: sender.to_string(),
         received_at: SystemTime::now(),
-        size,
-        preview,
+        size: 0,
+        // A known total starts at 0%; an unknown total has no percentage.
+        progress: total.map(|_| 0.0),
+        status: StreamStatus::InProgress,
+        is_file,
+        file_name,
+        mime_type,
+        content: None,
+        save: None,
     });
     while g.received.len() > MAX_RECEIVED {
         g.received.pop_front();
     }
+    n
+}
+
+/// Locks `entry` and applies `f` to the row with sequence number `n`, if it still exists.
+/// Rows can be evicted (`MAX_RECEIVED`) while a read is in flight; in that case this is a
+/// no-op and the read result is simply dropped.
+fn update_row(entry: &Arc<Mutex<TopicEntry>>, n: u64, f: impl FnOnce(&mut ReceivedStream)) {
+    let mut g = entry.lock();
+    if let Some(row) = g.received.iter_mut().find(|r| r.n == n) {
+        f(row);
+    }
+}
+
+/// Updates a row's byte count and completion fraction from bytes-processed-so-far. The
+/// fraction mirrors [`livekit::StreamProgress::percentage`]: `processed / total`, or `None`
+/// when the total size is unknown.
+fn update_progress(entry: &Arc<Mutex<TopicEntry>>, n: u64, processed: u64, total: Option<u64>) {
+    update_row(entry, n, |r| {
+        r.size = processed;
+        r.progress = total.map(|t| {
+            if t == 0 {
+                1.0
+            } else {
+                processed as f32 / t as f32
+            }
+        });
+    });
+}
+
+fn finish_error(entry: &Arc<Mutex<TopicEntry>>, n: u64, message: String) {
+    update_row(entry, n, |r| r.status = StreamStatus::Error(message));
+}
+
+/// A byte stream is treated as a downloadable file when it carries a name, or a meaningful
+/// mime type (the generic `application/octet-stream` default does not count).
+fn is_file_stream(name: &str, mime_type: &str) -> bool {
+    !name.is_empty() || (!mime_type.is_empty() && mime_type != "application/octet-stream")
+}
+
+/// The file name shown in the file box and offered as the Save default. Falls back to a
+/// name derived from the stream id when the sender did not set one.
+fn default_file_name(name: &str, id: &str) -> String {
+    if name.is_empty() {
+        format!("stream-{}", short_id(id))
+    } else {
+        name.to_string()
+    }
+}
+
+/// Streams every chunk of a byte reader into an anonymous temp file, returning the open
+/// handle. The file is unlinked at creation (`tempfile`), so the OS reclaims it when the
+/// handle is dropped or the process exits — including on a panic/abort, where `Drop` would
+/// not run (the release profile sets `panic = "abort"`).
+async fn stream_to_temp_file(
+    reader: &mut ByteStreamReader,
+    entry: &Arc<Mutex<TopicEntry>>,
+    n: u64,
+    total: Option<u64>,
+) -> Result<std::fs::File, String> {
+    use tokio::io::AsyncWriteExt;
+    let std_file = tempfile::tempfile_in(std::env::temp_dir()).map_err(|e| e.to_string())?;
+    let mut file = tokio::fs::File::from_std(std_file);
+    let mut processed = 0u64;
+    while let Some(chunk) = reader.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        processed += chunk.len() as u64;
+        update_progress(entry, n, processed, total);
+    }
+    file.flush().await.map_err(|e| e.to_string())?;
+    Ok(file.into_std().await)
+}
+
+/// Renders a single received-stream row: the `#n | sender | size (pct%) | ts` metadata line
+/// followed by either an inline preview or a downloadable file box.
+fn show_received(
+    ui: &mut egui::Ui,
+    service: &LkService,
+    entry: &Arc<Mutex<TopicEntry>>,
+    r: &ReceivedStream,
+) {
+    let size = match r.progress {
+        Some(p) => format!("{} ({}%)", format_size(r.size), (p * 100.0).round() as i64),
+        None => format_size(r.size),
+    };
+    let meta = format!(
+        "#{} | {} | {} | {}",
+        r.n,
+        r.sender,
+        size,
+        format_ts(r.received_at)
+    );
+    ui.weak(RichText::new(meta).small());
+
+    if let StreamStatus::Error(e) = &r.status {
+        ui.colored_label(ui.visuals().error_fg_color, format!("<error: {}>", e));
+        return;
+    }
+
+    if r.is_file {
+        show_file_box(ui, service, entry, r);
+    } else if let Some(StreamContent::Preview(preview)) = &r.content {
+        ui.add(egui::Label::new(RichText::new(preview).monospace()));
+    } else {
+        ui.weak("receiving…");
+    }
+}
+
+/// The file box for a file-like byte stream: icon + name + mime/size, a progress bar while
+/// receiving, and a Save… button once complete.
+fn show_file_box(
+    ui: &mut egui::Ui,
+    service: &LkService,
+    entry: &Arc<Mutex<TopicEntry>>,
+    r: &ReceivedStream,
+) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("📄");
+            ui.vertical(|ui| {
+                ui.monospace(RichText::new(&r.file_name).strong());
+                let mime = if r.mime_type.is_empty() {
+                    "application/octet-stream"
+                } else {
+                    &r.mime_type
+                };
+                ui.weak(RichText::new(format!("{} · {}", mime, format_size(r.size))).small());
+            });
+        });
+
+        match (&r.status, &r.content) {
+            (StreamStatus::Complete, Some(StreamContent::File { file })) => {
+                if ui.button("Save…").clicked() {
+                    spawn_save(
+                        service,
+                        entry.clone(),
+                        r.n,
+                        r.file_name.clone(),
+                        file.clone(),
+                    );
+                }
+            }
+            _ => {
+                let bar = egui::ProgressBar::new(r.progress.unwrap_or(0.0));
+                let bar = match r.progress {
+                    Some(_) => bar.show_percentage(),
+                    None => bar.animate(true),
+                };
+                ui.add(bar);
+            }
+        }
+
+        match &r.save {
+            Some(Ok(path)) => {
+                ui.weak(RichText::new(format!("Saved to {}", path)).small());
+            }
+            Some(Err(e)) => {
+                ui.colored_label(ui.visuals().error_fg_color, format!("Save failed: {}", e));
+            }
+            None => {}
+        }
+    });
+}
+
+/// Opens a native save dialog (defaulting to `name`) and copies the received temp file to the
+/// chosen destination, recording the outcome back on the row.
+fn spawn_save(
+    service: &LkService,
+    entry: Arc<Mutex<TopicEntry>>,
+    n: u64,
+    name: String,
+    file: Arc<std::fs::File>,
+) {
+    service.runtime().spawn(async move {
+        let Some(dest) = rfd::AsyncFileDialog::new()
+            .set_file_name(&name)
+            .save_file()
+            .await
+        else {
+            return; // user cancelled
+        };
+        let path = dest.path().to_path_buf();
+        let result = tokio::task::spawn_blocking(move || copy_file(&file, &path))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
+        update_row(&entry, n, |r| r.save = Some(result));
+    });
+}
+
+/// Copies the contents of an open (anonymous) temp file to `dest`. Reads through `&File` so
+/// the shared handle is not consumed and the file can be saved more than once.
+fn copy_file(file: &std::fs::File, dest: &std::path::Path) -> Result<String, String> {
+    use std::io::{Seek, SeekFrom, Write};
+    let mut src = file;
+    src.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let mut out = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+    std::io::copy(&mut src, &mut out).map_err(|e| e.to_string())?;
+    out.flush().map_err(|e| e.to_string())?;
+    Ok(dest.display().to_string())
 }
 
 /// Parses a hex string into bytes, ignoring whitespace, commas and colons.
@@ -513,11 +842,13 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn format_size(bytes: usize) -> String {
+fn format_size(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{}B", bytes)
-    } else {
+    } else if bytes < 1024 * 1024 {
         format!("{:.2}KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.2}MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
 
@@ -529,4 +860,36 @@ fn format_ts(ts: SystemTime) -> String {
     let s = total % 60;
     let ms = d.subsec_millis();
     format!("{:02}:{:02}:{:02}.{:03}Z", h, m, s, ms)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_box_trigger() {
+        // A name always makes it a file.
+        assert!(is_file_stream("photo.png", ""));
+        assert!(is_file_stream("data.bin", "application/octet-stream"));
+        // A meaningful mime type (without a name) makes it a file.
+        assert!(is_file_stream("", "image/png"));
+        // The generic octet-stream default alone does NOT: it falls back to inline preview.
+        assert!(!is_file_stream("", "application/octet-stream"));
+        // No name, no mime: inline preview (e.g. the hex/20k send test).
+        assert!(!is_file_stream("", ""));
+    }
+
+    #[test]
+    fn file_name_defaults_to_stream_id() {
+        assert_eq!(default_file_name("report.pdf", "stream-abc"), "report.pdf");
+        // Unnamed streams derive a name from the (shortened) stream id.
+        assert_eq!(default_file_name("", "abcdef0123456789"), "stream-abcdef01");
+    }
+
+    #[test]
+    fn human_readable_sizes() {
+        assert_eq!(format_size(512), "512B");
+        assert_eq!(format_size(2048), "2.00KB");
+        assert_eq!(format_size(3 * 1024 * 1024), "3.00MB");
+    }
 }
