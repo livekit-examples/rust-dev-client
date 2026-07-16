@@ -316,19 +316,13 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     tokio::spawn(async move {
                         let result = match payload {
                             DataStreamPayload::Text(text) => {
-                                let options = StreamTextOptions {
-                                    topic,
-                                    destination_identities,
-                                    ..Default::default()
-                                };
+                                let options = StreamTextOptions::new_with_topic(topic)
+                                    .with_destination_identities(destination_identities);
                                 local.send_text(&text, options).await.map(|info| info.id)
                             }
                             DataStreamPayload::Bytes(bytes) => {
-                                let options = StreamByteOptions {
-                                    topic,
-                                    destination_identities,
-                                    ..Default::default()
-                                };
+                                let options = StreamByteOptions::new_with_topic(topic)
+                                    .with_destination_identities(destination_identities);
                                 local.send_bytes(bytes, options).await.map(|info| info.id)
                             }
                         };
