@@ -150,6 +150,10 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
         sine_track: SineTrack,
         mic_track: MicTrack,
         data_track: Option<LocalDataTrack>,
+        // The platform ADM, held for the whole connection: it drives remote-audio
+        // playout and is shared with `mic_track` for capture. Dropped on
+        // disconnect (when `RunningState` is taken), which releases the ADM.
+        platform_audio: Option<PlatformAudio>,
     }
 
     let mut running_state = None;
@@ -185,12 +189,26 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     tokio::spawn(room_task(inner.clone(), events));
 
                     let new_room = Arc::new(new_room);
+
+                    // Enable the platform ADM for the connection so remote audio
+                    // plays out; also shared with the mic for capture.
+                    let platform_audio = match PlatformAudio::new() {
+                        Ok(audio) => Some(audio),
+                        Err(err) => {
+                            log::error!(
+                                "failed to init platform audio (remote audio + mic disabled): {err}"
+                            );
+                            None
+                        }
+                    };
+
                     running_state = Some(RunningState {
                         room: new_room.clone(),
                         logo_track: LogoTrack::new(new_room.clone()),
                         sine_track: SineTrack::new(new_room.clone(), SineParameters::default()),
                         mic_track: MicTrack::new(new_room.clone()),
                         data_track: None,
+                        platform_audio,
                     });
 
                     // Allow direct access to the room from the UI (Used for sync access)
@@ -237,13 +255,19 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
             }
             AsyncCmd::ToggleMic => {
                 if let Some(state) = running_state.as_mut() {
-                    let result = if state.mic_track.is_published() {
-                        state.mic_track.unpublish().await
+                    // Clone the ref-counted handle to sidestep a disjoint borrow of
+                    // `state` (mic_track is borrowed mutably below).
+                    if let Some(platform_audio) = state.platform_audio.clone() {
+                        let result = if state.mic_track.is_published() {
+                            state.mic_track.unpublish(&platform_audio).await
+                        } else {
+                            state.mic_track.publish(&platform_audio).await
+                        };
+                        if let Err(err) = result {
+                            log::error!("failed to toggle microphone: {err}");
+                        }
                     } else {
-                        state.mic_track.publish().await
-                    };
-                    if let Err(err) = result {
-                        log::error!("failed to toggle microphone: {err}");
+                        log::error!("cannot toggle microphone: platform audio unavailable");
                     }
                 }
             }

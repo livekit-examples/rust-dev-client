@@ -2,19 +2,15 @@ use livekit::options::TrackPublishOptions;
 use livekit::prelude::*;
 use std::sync::Arc;
 
-/// Publishes real microphone audio via the platform Audio Device Module (ADM).
-/// Unlike [`crate::media::SineTrack`], frames are captured automatically by
-/// WebRTC, so there is no generation task.
+/// Publishes real microphone audio via the shared platform Audio Device Module
+/// (ADM). The [`PlatformAudio`] handle is owned by the connection (see
+/// `RunningState` in `crate::service`) because it also drives remote-audio
+/// playout; this type only controls the mic — it starts/stops ADM recording and
+/// publishes/unpublishes the track on toggle. Frames are captured automatically
+/// by WebRTC, so (unlike [`crate::media::SineTrack`]) there is no generation task.
 pub struct MicTrack {
     room: Arc<Room>,
-    handle: Option<TrackHandle>,
-}
-
-struct TrackHandle {
-    track: LocalAudioTrack,
-    // Held for its lifetime to keep the platform ADM recording; dropping it
-    // releases the ADM. Underscore-prefixed: held for its drop, never read.
-    _platform_audio: PlatformAudio,
+    track: Option<LocalAudioTrack>,
 }
 
 impl MicTrack {
@@ -22,21 +18,18 @@ impl MicTrack {
     pub const TRACK_NAME: &str = "microphone";
 
     pub fn new(room: Arc<Room>) -> Self {
-        Self { room, handle: None }
+        Self { room, track: None }
     }
 
     pub fn is_published(&self) -> bool {
-        self.handle.is_some()
+        self.track.is_some()
     }
 
-    pub async fn publish(&mut self) -> Result<(), RoomError> {
-        let platform_audio = match PlatformAudio::new() {
-            Ok(audio) => audio,
-            Err(err) => {
-                log::error!("failed to initialize platform audio: {err}");
-                return Ok(()); // stay unpublished so the toggle can retry
-            }
-        };
+    pub async fn publish(&mut self, platform_audio: &PlatformAudio) -> Result<(), RoomError> {
+        // Resume mic capture (initializes recording on the first start).
+        if let Err(err) = platform_audio.start_recording() {
+            log::error!("failed to start platform audio recording: {err}");
+        }
 
         let track =
             LocalAudioTrack::create_audio_track(Self::TRACK_NAME, platform_audio.rtc_source());
@@ -52,19 +45,22 @@ impl MicTrack {
             )
             .await?;
 
-        self.handle = Some(TrackHandle {
-            track,
-            _platform_audio: platform_audio,
-        });
+        self.track = Some(track);
         Ok(())
     }
 
-    pub async fn unpublish(&mut self) -> Result<(), RoomError> {
-        if let Some(handle) = self.handle.take() {
+    pub async fn unpublish(&mut self, platform_audio: &PlatformAudio) -> Result<(), RoomError> {
+        if let Some(track) = self.track.take() {
             self.room
                 .local_participant()
-                .unpublish_track(&handle.track.sid())
+                .unpublish_track(&track.sid())
                 .await?;
+        }
+
+        // Pause capture (turns off the OS mic indicator); the ADM stays alive for
+        // remote-audio playout and is disposed only when the connection ends.
+        if let Err(err) = platform_audio.stop_recording() {
+            log::error!("failed to stop platform audio recording: {err}");
         }
 
         Ok(())
