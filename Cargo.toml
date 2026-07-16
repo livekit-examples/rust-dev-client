@@ -21,8 +21,12 @@ winit = { version = "0.30.13", features = [ "android-native-activity" ] }
 livekit = { version = "0.7.49", features = ["rustls-tls-native-roots"] }
 livekit-api = { version = "0.5.4", default-features = false, features = ["access-token"] }
 
-# For local development, use a path override to the rust-sdks repo:
-# livekit = { path = "../rust-sdks", features = ["rustls-tls-native-roots"] }
+# To build against a local checkout of the LiveKit Rust SDK, clone
+# https://github.com/livekit/rust-sdks to ../rust-sdks and uncomment
+# (see "Building against a local rust-sdks" in README.md):
+# [patch.crates-io]
+# livekit = { path = "../rust-sdks/livekit" }
+# livekit-api = { path = "../rust-sdks/livekit-api" }
 
 [package.metadata.bundle]
 name = "LiveKit Client"

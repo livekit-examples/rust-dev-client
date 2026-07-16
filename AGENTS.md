@@ -6,6 +6,11 @@
 - It has been moved here to become a refined, standalone developer tool
 - Existing code may not adhere to the requirements defined herein, however, new code and refactors should
 
+## Building
+
+- `cargo run` builds and runs the app against the pinned, published LiveKit crates
+- To build against a local `rust-sdks` checkout, uncomment the `[patch.crates-io]` block in _Cargo.toml_ (see "Building against a local rust-sdks" in _README.md_)
+
 ## UI best practices
 
 - This application uses [egui](https://docs.rs/egui/latest/egui/)
