@@ -52,7 +52,9 @@ pub struct ConnectSettings {
 }
 
 /// Which authentication method the connect form is editing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 enum AuthMethod {
     #[default]
     ApiKey,
@@ -62,6 +64,12 @@ enum AuthMethod {
 /// The root window: a welcome screen holding the only connect form in the app.
 /// Each successful Connect click spawns a dedicated room window. Inputs for both
 /// auth methods are kept so switching tabs doesn't lose what was typed.
+///
+/// Persisted between runs via eframe storage (see `AppRoot`); `#[serde(default)]`
+/// lets a stored blob from an older version fall back to `Default` (env-seeded)
+/// for any missing field.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct ConnectView {
     method: AuthMethod,
     url: String,
@@ -74,6 +82,8 @@ pub struct ConnectView {
     auto_subscribe: bool,
     dynacast: bool,
     enable_e2ee: bool,
+    // Not persisted: secrets always start hidden on launch.
+    #[serde(skip)]
     show_secrets: bool,
 }
 
