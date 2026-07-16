@@ -1,4 +1,4 @@
-use crate::media::{LogoTrack, SineParameters, SineTrack};
+use crate::media::{LogoTrack, MicTrack, SineParameters, SineTrack};
 use livekit::{
     SimulateScenario, StreamByteOptions, StreamTextOptions,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
@@ -25,6 +25,7 @@ pub enum AsyncCmd {
     },
     ToggleLogo,
     ToggleSine,
+    ToggleMic,
     ToggleDataTrack,
     SubscribeTrack {
         publication: RemoteTrackPublication,
@@ -147,6 +148,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
         room: Arc<Room>,
         logo_track: LogoTrack,
         sine_track: SineTrack,
+        mic_track: MicTrack,
         data_track: Option<LocalDataTrack>,
     }
 
@@ -187,6 +189,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                         room: new_room.clone(),
                         logo_track: LogoTrack::new(new_room.clone()),
                         sine_track: SineTrack::new(new_room.clone(), SineParameters::default()),
+                        mic_track: MicTrack::new(new_room.clone()),
                         data_track: None,
                     });
 
@@ -229,6 +232,18 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                         state.sine_track.unpublish().await.unwrap();
                     } else {
                         state.sine_track.publish().await.unwrap();
+                    }
+                }
+            }
+            AsyncCmd::ToggleMic => {
+                if let Some(state) = running_state.as_mut() {
+                    let result = if state.mic_track.is_published() {
+                        state.mic_track.unpublish().await
+                    } else {
+                        state.mic_track.publish().await
+                    };
+                    if let Err(err) = result {
+                        log::error!("failed to toggle microphone: {err}");
                     }
                 }
             }

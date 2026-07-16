@@ -29,6 +29,13 @@ fn publish_menu(ui: &mut egui::Ui, service: &LkService) {
         if ui.button("Sine Wave").clicked() {
             let _ = service.send(AsyncCmd::ToggleSine);
         }
+        if ui
+            .button("Microphone")
+            .on_hover_text("Publish real microphone audio via platform audio (ADM)")
+            .clicked()
+        {
+            let _ = service.send(AsyncCmd::ToggleMic);
+        }
         if ui.button("Data Track").clicked() {
             let _ = service.send(AsyncCmd::ToggleDataTrack);
         }
