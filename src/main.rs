@@ -17,6 +17,9 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport,
         centered: true,
+        // Persist only the connect form (see AppRoot::save), not window geometry —
+        // the root window is fixed-size and centered.
+        persist_window: false,
         ..Default::default()
     };
 
