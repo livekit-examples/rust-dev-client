@@ -1,4 +1,7 @@
+use crate::media::MicTrack;
 use crate::room::RoomContext;
+use crate::service::AsyncCmd;
+use crate::style::Palette;
 use crate::ui::status_badge::StatusBadge;
 use livekit::prelude::*;
 
@@ -37,6 +40,13 @@ impl egui::Widget for StatusBar<'_> {
             .room
             .filter(|r| r.connection_state() == ConnectionState::Connected);
 
+        let mic_active = room.is_some_and(|r| {
+            r.local_participant()
+                .track_publications()
+                .values()
+                .any(|p| p.name().as_str() == MicTrack::TRACK_NAME)
+        });
+
         ui.horizontal(|ui| {
             if let Some(err) = connection_failure {
                 ui.add(StatusBadge::error(format!("Connection failed: {err}")));
@@ -62,6 +72,24 @@ impl egui::Widget for StatusBar<'_> {
                         .clicked()
                     {
                         actions.disconnect = true;
+                    }
+                    let palette = Palette::for_theme(ui.theme());
+                    let mic_label = if mic_active {
+                        egui::RichText::new("Microphone").color(palette.bg_1)
+                    } else {
+                        egui::RichText::new("Microphone")
+                    };
+                    let mut mic_button = egui::Button::new(mic_label).min_size(size);
+                    if mic_active {
+                        mic_button = mic_button.fill(palette.fg_success);
+                    }
+                    let mic_tooltip = if mic_active {
+                        "Microphone is publishing — click to stop (platform audio / ADM)"
+                    } else {
+                        "Publish microphone audio via platform audio (ADM)"
+                    };
+                    if ui.add(mic_button).on_hover_text(mic_tooltip).clicked() {
+                        let _ = ctx.service.send(AsyncCmd::ToggleMic);
                     }
                 } else if ui
                     .add(egui::Button::new("Reconnect").min_size(size))

@@ -18,6 +18,9 @@ struct TrackHandle {
 }
 
 impl MicTrack {
+    /// Track name used when publishing; also how the UI detects the mic is live.
+    pub const TRACK_NAME: &str = "microphone";
+
     pub fn new(room: Arc<Room>) -> Self {
         Self { room, handle: None }
     }
@@ -35,7 +38,8 @@ impl MicTrack {
             }
         };
 
-        let track = LocalAudioTrack::create_audio_track("microphone", platform_audio.rtc_source());
+        let track =
+            LocalAudioTrack::create_audio_track(Self::TRACK_NAME, platform_audio.rtc_source());
 
         self.room
             .local_participant()
