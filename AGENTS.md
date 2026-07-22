@@ -61,10 +61,13 @@
 
 - Adhere to requirements in [_CONTRIBUTING.md_](./CONTRIBUTING.md)
 - Always format using `cargo fmt`
+  - CI enforces this via `cargo fmt --check`
 - Always address all issues, both clippy and compiler warnings
+  - Verify with the same invocation CI uses: `cargo clippy --all-targets -- -D warnings --no-deps`
   - Do not reach for `#[allow(...)]` to bypass warnings unless it is unavoidable in the context
   - Be explicit when you are bypassing warnings
 - Always run cspell and fix spelling issues
+  - `npx cspell --no-progress "**"` checks all files, matching CI
   - If a flagged word is valid project terminology, add it to _cspell.yml_ and sort the list alphabetically
 
 ## Release process
