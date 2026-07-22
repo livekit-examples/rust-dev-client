@@ -67,7 +67,7 @@ impl AppRoot {
         let id = self.next_window_id;
         self.next_window_id += 1;
 
-        let title = format!("{} - {}", APP_NAME, request.url);
+        let title = format!("{} - {}", APP_NAME, request.auth.target_label());
         let window = RoomWindow::new(
             id,
             self.async_runtime.handle().clone(),

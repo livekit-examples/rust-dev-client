@@ -1,27 +1,36 @@
 use crate::ui::{labeled_field::LabeledTextEdit, prominent_button::ProminentButton};
+use livekit_token_source::{TokenSourceSandbox, TokenSourceFetchOptions};
 
-/// How a room connection is authenticated.
-#[derive(Clone)]
+/// How a room connection is authenticated. The methods that target a known
+/// server carry its URL; the token-source method learns it from the sandbox.
+#[derive(Clone, Debug)]
 pub enum Auth {
     /// A pre-generated access token (the room is encoded in it).
-    Token(String),
+    Token { url: String, token: String },
     /// API credentials from which a join token is generated on demand.
     ApiKey {
+        url: String,
         api_key: String,
         api_secret: String,
         identity: String,
         room: String,
     },
-    TokenSource{sandbox_id: String}
+    /// A LiveKit Cloud sandbox token server, which provides both the server
+    /// URL and the join token.
+    TokenSource { sandbox_id: String },
 }
 
 impl Auth {
-    /// Resolve to a room-connection JWT, generating one from the API credentials
-    /// when this is the API-key method.
-    pub fn access_token(&self) -> Result<String, String> {
+    /// Resolve to `(server_url, token)`: the JWT is generated locally for the
+    /// API-key method, fetched over HTTP for the token-source method.
+    ///
+    /// Async because of that fetch — call it from the service task, not the UI
+    /// thread.
+    pub async fn connection_details(&self) -> Result<(String, String), String> {
         match self {
-            Auth::Token(token) => Ok(token.clone()),
+            Auth::Token { url, token } => Ok((url.clone(), token.clone())),
             Auth::ApiKey {
+                url,
                 api_key,
                 api_secret,
                 identity,
@@ -35,8 +44,30 @@ impl Auth {
                     ..Default::default()
                 })
                 .to_jwt()
+                .map(|token| (url.clone(), token))
                 .map_err(|e| e.to_string()),
-            Auth::TokenSource{sandbox_id} => Ok("".to_string()),
+            Auth::TokenSource { sandbox_id } => {
+                let options = TokenSourceFetchOptions {
+                    agent_name: Some("Church".to_string()),
+                    ..Default::default()
+                };
+
+                let token_source = TokenSourceSandbox::new(sandbox_id.to_owned());
+                let response = token_source
+                    .fetch(&options)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok((response.server_url, response.participant_token))
+            }
+        }
+    }
+
+    /// Short label of the connection target for window titles: the server URL
+    /// when known up front, otherwise the sandbox id.
+    pub fn target_label(&self) -> &str {
+        match self {
+            Auth::Token { url, .. } | Auth::ApiKey { url, .. } => url,
+            Auth::TokenSource { sandbox_id } => sandbox_id,
         }
     }
 }
@@ -45,7 +76,6 @@ impl Auth {
 /// per application, passed to each room window as it is opened.
 #[derive(Clone)]
 pub struct ConnectSettings {
-    pub url: String,
     pub auth: Auth,
     pub key: String,
     pub auto_subscribe: bool,
@@ -121,34 +151,41 @@ impl Default for ConnectView {
 
 impl ConnectView {
     fn is_connect_enabled(&self) -> bool {
-        if self.url.trim().is_empty() {
-            return false;
-        }
+        // The URL only matters for the methods that use it; the token-source
+        // method gets its server URL from the sandbox response.
         match self.method {
             AuthMethod::ApiKey => {
-                !self.api_key.trim().is_empty()
+                !self.url.trim().is_empty()
+                    && !self.api_key.trim().is_empty()
                     && !self.api_secret.trim().is_empty()
                     && !self.identity.trim().is_empty()
                     && !self.room.trim().is_empty()
             }
-            AuthMethod::Token => !self.token.trim().is_empty(),
-            AuthMethod::TokenSource => !self.sandbox_id.trim().is_empty()
+            AuthMethod::Token => {
+                !self.url.trim().is_empty() && !self.token.trim().is_empty()
+            }
+            AuthMethod::TokenSource => !self.sandbox_id.trim().is_empty(),
         }
     }
 
     fn current_settings(&self) -> ConnectSettings {
         let auth = match self.method {
             AuthMethod::ApiKey => Auth::ApiKey {
+                url: self.url.clone(),
                 api_key: self.api_key.clone(),
                 api_secret: self.api_secret.clone(),
                 identity: self.identity.clone(),
                 room: self.room.clone(),
             },
-            AuthMethod::Token => Auth::Token(self.token.clone()),
-            AuthMethod::TokenSource => Auth::TokenSource{sandbox_id: self.sandbox_id.clone()},
+            AuthMethod::Token => Auth::Token {
+                url: self.url.clone(),
+                token: self.token.clone(),
+            },
+            AuthMethod::TokenSource => Auth::TokenSource {
+                sandbox_id: self.sandbox_id.clone(),
+            },
         };
         ConnectSettings {
-            url: self.url.clone(),
             auth,
             key: self.key.clone(),
             auto_subscribe: self.auto_subscribe,
@@ -225,9 +262,6 @@ impl egui::Widget for ConnectForm<'_> {
             ui.label(egui::RichText::new("Connect to a Room").text_style(egui::TextStyle::Heading));
             ui.add_space(8.0);
 
-            ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
-            ui.add_space(8.0);
-
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
@@ -252,12 +286,18 @@ impl egui::Widget for ConnectForm<'_> {
             // same rect, so a per-method salt would give that rect a different id
             // each switch — which is exactly what egui's "rect changed id between
             // passes" warning flags. A stable salt keeps the id constant.
+            // The URL lives inside the Token / API Key tabs (shared between
+            // them): the token-source method gets its URL from the sandbox.
             ui.push_id("auth_method_fields", |ui| match view.method {
                 AuthMethod::Token => {
+                    ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
+                    ui.add_space(8.0);
                     ui.add(LabeledTextEdit::singleline("Token", &mut view.token).password(mask));
                     ui.add_space(8.0);
                 }
                 AuthMethod::ApiKey => {
+                    ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
+                    ui.add_space(8.0);
                     ui.columns(2, |columns| {
                         columns[0].add(
                             LabeledTextEdit::singleline("API Key", &mut view.api_key)
