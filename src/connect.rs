@@ -12,6 +12,7 @@ pub enum Auth {
         identity: String,
         room: String,
     },
+    TokenSource{sandbox_id: String}
 }
 
 impl Auth {
@@ -35,6 +36,7 @@ impl Auth {
                 })
                 .to_jwt()
                 .map_err(|e| e.to_string()),
+            Auth::TokenSource{sandbox_id} => Ok("".to_string()),
         }
     }
 }
@@ -59,6 +61,7 @@ enum AuthMethod {
     #[default]
     ApiKey,
     Token,
+    TokenSource
 }
 
 /// The root window: a welcome screen holding the only connect form in the app.
@@ -74,6 +77,7 @@ pub struct ConnectView {
     method: AuthMethod,
     url: String,
     token: String,
+    sandbox_id: String,
     api_key: String,
     api_secret: String,
     identity: String,
@@ -101,6 +105,7 @@ impl Default for ConnectView {
             method: AuthMethod::default(),
             url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
             token: env_or("LIVEKIT_TOKEN", ""),
+            sandbox_id: "sandbox-id".to_string(),
             api_key: env_or("LIVEKIT_API_KEY", "devkey"),
             api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
@@ -127,6 +132,7 @@ impl ConnectView {
                     && !self.room.trim().is_empty()
             }
             AuthMethod::Token => !self.token.trim().is_empty(),
+            AuthMethod::TokenSource => !self.sandbox_id.trim().is_empty()
         }
     }
 
@@ -139,6 +145,7 @@ impl ConnectView {
                 room: self.room.clone(),
             },
             AuthMethod::Token => Auth::Token(self.token.clone()),
+            AuthMethod::TokenSource => Auth::TokenSource{sandbox_id: self.sandbox_id.clone()},
         };
         ConnectSettings {
             url: self.url.clone(),
@@ -224,6 +231,7 @@ impl egui::Widget for ConnectForm<'_> {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
+                ui.selectable_value(&mut view.method, AuthMethod::TokenSource, "TokenSource");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .add(egui::Button::selectable(view.show_secrets, "👁"))
@@ -239,10 +247,12 @@ impl egui::Widget for ConnectForm<'_> {
             // the eye toggle above is on.
             let mask = !view.show_secrets;
 
-            // Scope each method's fields under a distinct id so switching tabs
-            // is seen as a layout change, not an unstable widget id (egui warns
-            // when a rect's id changes between passes under the same parent).
-            ui.push_id(view.method, |ui| match view.method {
+            // Scope the method's fields under a *constant* id. The single-field
+            // tabs (Token / TokenSource) render the same full-width widget at the
+            // same rect, so a per-method salt would give that rect a different id
+            // each switch — which is exactly what egui's "rect changed id between
+            // passes" warning flags. A stable salt keeps the id constant.
+            ui.push_id("auth_method_fields", |ui| match view.method {
                 AuthMethod::Token => {
                     ui.add(LabeledTextEdit::singleline("Token", &mut view.token).password(mask));
                     ui.add_space(8.0);
@@ -263,6 +273,10 @@ impl egui::Widget for ConnectForm<'_> {
                         columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
                         columns[1].add(LabeledTextEdit::singleline("Room", &mut view.room));
                     });
+                    ui.add_space(8.0);
+                },
+                AuthMethod::TokenSource => {
+                    ui.add(LabeledTextEdit::singleline("Sandbox Id", &mut view.sandbox_id));
                     ui.add_space(8.0);
                 }
             });
