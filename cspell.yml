@@ -26,6 +26,7 @@ words:
   - noninteractive
   - nutf8
   - oneshot
+  - playout
   - publicsans
   - rsplit
   - rustls
