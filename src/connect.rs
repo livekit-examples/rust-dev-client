@@ -16,8 +16,12 @@ pub enum Auth {
         room: String,
     },
     /// A LiveKit Cloud sandbox token server, which provides both the server
-    /// URL and the join token.
-    TokenSource { sandbox_id: String },
+    /// URL and the join token. `options` parameterizes the request; unset
+    /// fields are left to server defaults.
+    TokenSource {
+        sandbox_id: String,
+        options: TokenSourceFetchOptions,
+    },
 }
 
 impl Auth {
@@ -46,15 +50,13 @@ impl Auth {
                 .to_jwt()
                 .map(|token| (url.clone(), token))
                 .map_err(|e| e.to_string()),
-            Auth::TokenSource { sandbox_id } => {
-                let options = TokenSourceFetchOptions {
-                    agent_name: Some("Church".to_string()),
-                    ..Default::default()
-                };
-
+            Auth::TokenSource {
+                sandbox_id,
+                options,
+            } => {
                 let token_source = TokenSourceSandbox::new(sandbox_id.to_owned());
                 let response = token_source
-                    .fetch(&options)
+                    .fetch(options)
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok((response.server_url, response.participant_token))
@@ -67,7 +69,7 @@ impl Auth {
     pub fn target_label(&self) -> &str {
         match self {
             Auth::Token { url, .. } | Auth::ApiKey { url, .. } => url,
-            Auth::TokenSource { sandbox_id } => sandbox_id,
+            Auth::TokenSource { sandbox_id, .. } => sandbox_id,
         }
     }
 }
@@ -108,6 +110,15 @@ pub struct ConnectView {
     url: String,
     token: String,
     sandbox_id: String,
+    // Token-source fetch options (`ts_` to keep them apart from the API-key
+    // tab's identity/room). Empty means "omit, let the server default".
+    ts_room_name: String,
+    ts_participant_name: String,
+    ts_participant_identity: String,
+    ts_participant_metadata: String,
+    ts_agent_name: String,
+    ts_agent_metadata: String,
+    ts_agent_deployment: String,
     api_key: String,
     api_secret: String,
     identity: String,
@@ -136,6 +147,13 @@ impl Default for ConnectView {
             url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
             token: env_or("LIVEKIT_TOKEN", ""),
             sandbox_id: "sandbox-id".to_string(),
+            ts_room_name: String::new(),
+            ts_participant_name: String::new(),
+            ts_participant_identity: String::new(),
+            ts_participant_metadata: String::new(),
+            ts_agent_name: String::new(),
+            ts_agent_metadata: String::new(),
+            ts_agent_deployment: String::new(),
             api_key: env_or("LIVEKIT_API_KEY", "devkey"),
             api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
@@ -181,9 +199,27 @@ impl ConnectView {
                 url: self.url.clone(),
                 token: self.token.clone(),
             },
-            AuthMethod::TokenSource => Auth::TokenSource {
-                sandbox_id: self.sandbox_id.clone(),
-            },
+            AuthMethod::TokenSource => {
+                // Empty (or whitespace-only) fields are omitted from the
+                // request so the token server applies its defaults.
+                let opt = |s: &str| {
+                    let s = s.trim();
+                    (!s.is_empty()).then(|| s.to_string())
+                };
+                Auth::TokenSource {
+                    sandbox_id: self.sandbox_id.clone(),
+                    options: TokenSourceFetchOptions {
+                        room_name: opt(&self.ts_room_name),
+                        participant_name: opt(&self.ts_participant_name),
+                        participant_identity: opt(&self.ts_participant_identity),
+                        participant_metadata: opt(&self.ts_participant_metadata),
+                        agent_name: opt(&self.ts_agent_name),
+                        agent_metadata: opt(&self.ts_agent_metadata),
+                        agent_deployment: opt(&self.ts_agent_deployment),
+                        ..Default::default()
+                    },
+                }
+            }
         };
         ConnectSettings {
             auth,
@@ -317,6 +353,46 @@ impl egui::Widget for ConnectForm<'_> {
                 },
                 AuthMethod::TokenSource => {
                     ui.add(LabeledTextEdit::singleline("Sandbox Id", &mut view.sandbox_id));
+                    ui.add_space(8.0);
+
+                    ui.label(
+                        egui::RichText::new("Optional overrides — empty fields use server defaults")
+                            .text_style(egui::TextStyle::Small),
+                    );
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0]
+                            .add(LabeledTextEdit::singleline("Room Name", &mut view.ts_room_name));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Participant Name",
+                            &mut view.ts_participant_name,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Participant Identity",
+                            &mut view.ts_participant_identity,
+                        ));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Participant Metadata",
+                            &mut view.ts_participant_metadata,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0]
+                            .add(LabeledTextEdit::singleline("Agent Name", &mut view.ts_agent_name));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Agent Deployment",
+                            &mut view.ts_agent_deployment,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.add(LabeledTextEdit::singleline(
+                        "Agent Metadata",
+                        &mut view.ts_agent_metadata,
+                    ));
                     ui.add_space(8.0);
                 }
             });
