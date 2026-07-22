@@ -1,5 +1,5 @@
 use crate::ui::{labeled_field::LabeledTextEdit, prominent_button::ProminentButton};
-use livekit_token_source::{TokenSourceSandbox, TokenSourceFetchOptions};
+use livekit_token_source::{TokenSourceFetchOptions, TokenSourceSandbox};
 
 /// How a room connection is authenticated. The methods that target a known
 /// server carry its URL; the token-source method learns it from the sandbox.
@@ -16,7 +16,7 @@ pub enum Auth {
         room: String,
     },
     /// A LiveKit Cloud sandbox token server, which provides both the server
-    /// URL and the join token. `options` parameterizes the request; unset
+    /// URL and the join token. `options` customizes the request; unset
     /// fields are left to server defaults.
     TokenSource {
         sandbox_id: String,
@@ -93,7 +93,7 @@ enum AuthMethod {
     #[default]
     ApiKey,
     Token,
-    TokenSource
+    TokenSource,
 }
 
 /// The root window: a welcome screen holding the only connect form in the app.
@@ -179,9 +179,7 @@ impl ConnectView {
                     && !self.identity.trim().is_empty()
                     && !self.room.trim().is_empty()
             }
-            AuthMethod::Token => {
-                !self.url.trim().is_empty() && !self.token.trim().is_empty()
-            }
+            AuthMethod::Token => !self.url.trim().is_empty() && !self.token.trim().is_empty(),
             AuthMethod::TokenSource => !self.sandbox_id.trim().is_empty(),
         }
     }
@@ -350,19 +348,26 @@ impl egui::Widget for ConnectForm<'_> {
                         columns[1].add(LabeledTextEdit::singleline("Room", &mut view.room));
                     });
                     ui.add_space(8.0);
-                },
+                }
                 AuthMethod::TokenSource => {
-                    ui.add(LabeledTextEdit::singleline("Sandbox Id", &mut view.sandbox_id));
+                    ui.add(LabeledTextEdit::singleline(
+                        "Sandbox Id",
+                        &mut view.sandbox_id,
+                    ));
                     ui.add_space(8.0);
 
                     ui.label(
-                        egui::RichText::new("Optional overrides — empty fields use server defaults")
-                            .text_style(egui::TextStyle::Small),
+                        egui::RichText::new(
+                            "Optional overrides — empty fields use server defaults",
+                        )
+                        .text_style(egui::TextStyle::Small),
                     );
                     ui.add_space(8.0);
                     ui.columns(2, |columns| {
-                        columns[0]
-                            .add(LabeledTextEdit::singleline("Room Name", &mut view.ts_room_name));
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Room Name",
+                            &mut view.ts_room_name,
+                        ));
                         columns[1].add(LabeledTextEdit::singleline(
                             "Participant Name",
                             &mut view.ts_participant_name,
@@ -381,8 +386,10 @@ impl egui::Widget for ConnectForm<'_> {
                     });
                     ui.add_space(8.0);
                     ui.columns(2, |columns| {
-                        columns[0]
-                            .add(LabeledTextEdit::singleline("Agent Name", &mut view.ts_agent_name));
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Agent Name",
+                            &mut view.ts_agent_name,
+                        ));
                         columns[1].add(LabeledTextEdit::singleline(
                             "Agent Deployment",
                             &mut view.ts_agent_deployment,

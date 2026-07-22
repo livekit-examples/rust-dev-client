@@ -13,7 +13,9 @@ use tokio::sync::mpsc::{self, error::SendError};
 #[derive(Debug)]
 pub enum AsyncCmd {
     RoomConnect {
-        auth: Auth,
+        /// Boxed to keep `AsyncCmd` small (clippy: `result_large_err` on
+        /// [`LkService::send`]); the token-source options make `Auth` large.
+        auth: Box<Auth>,
         auto_subscribe: bool,
         dynacast: bool,
         enable_e2ee: bool,

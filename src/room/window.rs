@@ -57,7 +57,7 @@ impl RoomWindow {
         self.connecting = true;
         self.connection_failure = None;
         let _ = self.service.send(AsyncCmd::RoomConnect {
-            auth: self.request.auth.clone(),
+            auth: Box::new(self.request.auth.clone()),
             auto_subscribe: self.request.auto_subscribe,
             dynacast: self.request.dynacast,
             enable_e2ee: self.request.enable_e2ee,
