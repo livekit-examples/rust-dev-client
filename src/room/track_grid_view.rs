@@ -3,6 +3,7 @@ use crate::room::RoomContext;
 use crate::room::data_track::{
     LocalDataTrackTile, LocalDataTrackWidget, RemoteDataTrackTile, RemoteDataTrackWidget,
 };
+use crate::ui::placeholder_tile::{PlaceholderTile, placeholder_texture};
 use crate::ui::{track_grid::TrackGrid, video_tile::VideoTile};
 use livekit::prelude::*;
 use std::collections::HashMap;
@@ -23,49 +24,80 @@ impl egui::Widget for TrackGridView<'_> {
             remote_data_tracks,
         } = self;
 
-        let connected = ctx.room.is_some();
-        let has_tiles = !video_renderers.is_empty()
-            || !local_data_tracks.is_empty()
-            || !remote_data_tracks.is_empty();
-
         ui.scope(|ui| {
-            if connected && !has_tiles {
-                ui.centered_and_justified(|ui| {
-                    ui.label("No tracks subscribed");
-                });
-                return;
-            }
-
             egui::ScrollArea::vertical()
                 .id_salt(ctx.id.with("central_scroll"))
                 .show(ui, |ui| {
+                    // `TrackGrid::show` hands the closure a `TrackGridContext`, not
+                    // an `egui::Ui`, so capture the egui context here (cheap Arc
+                    // clone) to resolve the placeholder texture lazily below.
+                    let egui_ctx = ui.ctx().clone();
                     TrackGrid::new(ctx.id.with("default_grid"))
                         .max_columns(6)
                         .show(ui, |ui| {
                             if let Some(room) = ctx.room {
-                                for ((participant_id, _), video_renderer) in video_renderers {
-                                    ui.track_frame(|ui| {
-                                        if let Some(p) =
-                                            room.remote_participants().get(participant_id)
-                                        {
-                                            let name = p.name();
-                                            ui.add(VideoTile::new(
-                                                video_renderer.texture_id(),
-                                                video_renderer.resolution(),
-                                                name.as_str(),
-                                                p.is_speaking(),
-                                            ));
-                                        } else {
-                                            let lp = room.local_participant();
-                                            let name = lp.name();
-                                            ui.add(VideoTile::new(
-                                                video_renderer.texture_id(),
-                                                video_renderer.resolution(),
-                                                name.as_str(),
-                                                lp.is_speaking(),
-                                            ));
+                                let placeholder = placeholder_texture(&egui_ctx);
+
+                                // Local participant first, then remotes sorted by
+                                // identity for a stable order in immediate mode.
+                                let mut participants =
+                                    vec![Participant::Local(room.local_participant())];
+                                let remotes = room.remote_participants();
+                                let mut ids = remotes
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<ParticipantIdentity>>();
+                                ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+                                participants.extend(
+                                    ids.into_iter()
+                                        .map(|id| Participant::Remote(remotes[&id].clone())),
+                                );
+
+                                for participant in &participants {
+                                    let identity = participant.identity();
+                                    let speaking = participant.is_speaking();
+
+                                    // Video tracks currently sending live frames:
+                                    // not muted and backed by a renderer with a frame.
+                                    let publications = participant.track_publications();
+                                    let mut video_sids = publications
+                                        .iter()
+                                        .filter(|(_, p)| {
+                                            p.kind() == TrackKind::Video && !p.is_muted()
+                                        })
+                                        .map(|(sid, _)| sid.clone())
+                                        .collect::<Vec<TrackSid>>();
+                                    video_sids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+
+                                    let mut rendered_video = false;
+                                    for sid in video_sids {
+                                        let Some(renderer) =
+                                            video_renderers.get(&(identity.clone(), sid))
+                                        else {
+                                            continue;
+                                        };
+                                        if renderer.texture_id().is_none() {
+                                            continue; // no frame decoded yet
                                         }
-                                    });
+                                        ui.track_frame(|ui| {
+                                            ui.add(VideoTile::new(
+                                                renderer.texture_id(),
+                                                identity.as_str(),
+                                                speaking,
+                                            ));
+                                        });
+                                        rendered_video = true;
+                                    }
+
+                                    if !rendered_video {
+                                        ui.track_frame(|ui| {
+                                            ui.add(PlaceholderTile::new(
+                                                placeholder.id(),
+                                                identity.as_str(),
+                                                speaking,
+                                            ));
+                                        });
+                                    }
                                 }
 
                                 for tile in &mut *local_data_tracks {

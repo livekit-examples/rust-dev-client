@@ -46,7 +46,7 @@ impl egui::Widget for StatusBar<'_> {
                 ui.label(format!(
                     "Connected to '{}' as '{}'",
                     room.name(),
-                    room.local_participant().name()
+                    room.local_participant().identity()
                 ));
             } else {
                 ui.label("Disconnected");

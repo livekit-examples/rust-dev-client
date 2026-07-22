@@ -3,7 +3,8 @@ use crate::service::AsyncCmd;
 use crate::ui::status_badge::StatusBadge;
 use livekit::{e2ee::EncryptionType, prelude::*, track::VideoQuality};
 
-/// Scrollable list of remote participants and their track publications.
+/// Scrollable list of the local and remote participants and their track
+/// publications.
 pub struct ParticipantsPanel<'a> {
     pub ctx: &'a RoomContext<'a>,
 }
@@ -20,6 +21,13 @@ impl egui::Widget for ParticipantsPanel<'_> {
             egui::ScrollArea::vertical()
                 .id_salt(ctx.id.with("participants_scroll"))
                 .show(ui, |ui| {
+                    // Local participant first, so "you" are always visible and
+                    // stable at the top.
+                    ui.add(ParticipantCard {
+                        ctx,
+                        participant: Participant::Local(room.local_participant()),
+                    });
+
                     // Iterate with sorted keys to avoid flickers (immediate-mode UI).
                     let participants = room.remote_participants();
                     let mut sorted_participants = participants
@@ -29,8 +37,11 @@ impl egui::Widget for ParticipantsPanel<'_> {
                     sorted_participants.sort_by(|a, b| a.as_str().cmp(b.as_str()));
 
                     for psid in sorted_participants {
-                        let participant = participants.get(&psid).unwrap();
-                        ui.add(ParticipantCard { ctx, participant });
+                        let participant = participants.get(&psid).unwrap().clone();
+                        ui.add(ParticipantCard {
+                            ctx,
+                            participant: Participant::Remote(participant),
+                        });
                     }
                 });
         })
@@ -42,15 +53,21 @@ impl egui::Widget for ParticipantsPanel<'_> {
 /// track publication in the body.
 struct ParticipantCard<'a> {
     ctx: &'a RoomContext<'a>,
-    participant: &'a RemoteParticipant,
+    participant: Participant,
 }
 
 impl egui::Widget for ParticipantCard<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let ParticipantCard { ctx, participant } = self;
+        let is_local = matches!(participant, Participant::Local(_));
         let identity = participant.identity().0;
-        egui::CollapsingHeader::new(identity.as_str())
-            .id_salt(ctx.id.with(("participant", identity.as_str())))
+        let title = if is_local {
+            format!("{} (You)", identity.as_str())
+        } else {
+            identity.as_str().to_owned()
+        };
+        egui::CollapsingHeader::new(title)
+            .id_salt(ctx.id.with(("participant", is_local, identity.as_str())))
             .default_open(true)
             .show(ui, |ui| {
                 ui.weak(format!(
@@ -72,11 +89,12 @@ impl egui::Widget for ParticipantCard<'_> {
     }
 }
 
-/// One track publication: encryption, name/source, simulcast + quality menu,
-/// and muted/subscribed status with subscribe/unsubscribe controls.
+/// One track publication: encryption, name/source, simulcast, and muted status.
+/// The quality menu and subscribe/unsubscribe controls apply only to remote
+/// tracks, so they are hidden for the local participant's own publications.
 struct TrackPublicationRow<'a> {
     ctx: &'a RoomContext<'a>,
-    publication: RemoteTrackPublication,
+    publication: TrackPublication,
 }
 
 impl egui::Widget for TrackPublicationRow<'_> {
@@ -104,22 +122,25 @@ impl egui::Widget for TrackPublicationRow<'_> {
                 ui.label("Simulcasted - ");
                 let is_simulcasted = publication.simulcasted();
                 ui.label(if is_simulcasted { "Yes" } else { "No" });
-                if is_simulcasted {
+                // The receiving-side quality selector only applies to a remote
+                // subscription.
+                if let TrackPublication::Remote(remote) = &publication
+                    && is_simulcasted
+                {
                     ui.menu_button("Set Quality", |ui| {
-                        let publication = publication.clone();
                         if ui.button("Low").clicked() {
                             let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication,
+                                publication: remote.clone(),
                                 quality: VideoQuality::Low,
                             });
                         } else if ui.button("Medium").clicked() {
                             let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication,
+                                publication: remote.clone(),
                                 quality: VideoQuality::Medium,
                             });
                         } else if ui.button("High").clicked() {
                             let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication,
+                                publication: remote.clone(),
                                 quality: VideoQuality::High,
                             });
                         }
@@ -132,18 +153,26 @@ impl egui::Widget for TrackPublicationRow<'_> {
                     ui.add(StatusBadge::muted("Muted"));
                 }
 
-                if publication.is_subscribed() {
-                    ui.add(StatusBadge::ok("Subscribed"));
-                } else {
-                    ui.add(StatusBadge::error("Unsubscribed"));
-                }
-
-                if publication.is_subscribed() {
-                    if ui.button("Unsubscribe").clicked() {
-                        let _ = ctx.service.send(AsyncCmd::UnsubscribeTrack { publication });
+                // Subscription is a remote-only concept; you always "have" your
+                // own local tracks.
+                if let TrackPublication::Remote(remote) = &publication {
+                    if remote.is_subscribed() {
+                        ui.add(StatusBadge::ok("Subscribed"));
+                    } else {
+                        ui.add(StatusBadge::error("Unsubscribed"));
                     }
-                } else if ui.button("Subscribe").clicked() {
-                    let _ = ctx.service.send(AsyncCmd::SubscribeTrack { publication });
+
+                    if remote.is_subscribed() {
+                        if ui.button("Unsubscribe").clicked() {
+                            let _ = ctx.service.send(AsyncCmd::UnsubscribeTrack {
+                                publication: remote.clone(),
+                            });
+                        }
+                    } else if ui.button("Subscribe").clicked() {
+                        let _ = ctx.service.send(AsyncCmd::SubscribeTrack {
+                            publication: remote.clone(),
+                        });
+                    }
                 }
             });
         })

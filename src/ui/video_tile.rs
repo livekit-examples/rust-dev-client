@@ -1,25 +1,18 @@
 /// Widget: paints a video frame to fill the available space, with a speaking
-/// border and a resolution/name overlay. Decoupled from any video source — the
-/// caller passes the already-resolved texture id and resolution, so this stays
-/// a pure UI primitive.
+/// border and a participant-identity overlay. Decoupled from any video source —
+/// the caller passes the already-resolved texture id, so this stays a pure UI
+/// primitive.
 pub struct VideoTile<'a> {
     texture: Option<egui::TextureId>,
-    resolution: (u32, u32),
-    name: &'a str,
+    identity: &'a str,
     speaking: bool,
 }
 
 impl<'a> VideoTile<'a> {
-    pub fn new(
-        texture: Option<egui::TextureId>,
-        resolution: (u32, u32),
-        name: &'a str,
-        speaking: bool,
-    ) -> Self {
+    pub fn new(texture: Option<egui::TextureId>, identity: &'a str, speaking: bool) -> Self {
         Self {
             texture,
-            resolution,
-            name,
+            identity,
             speaking,
         }
     }
@@ -49,11 +42,10 @@ impl egui::Widget for VideoTile<'_> {
             );
         }
 
-        let (width, height) = self.resolution;
         ui.painter().text(
             egui::pos2(rect.min.x + 5.0, rect.max.y - 5.0),
             egui::Align2::LEFT_BOTTOM,
-            format!("{}x{} {}", width, height, self.name),
+            self.identity,
             egui::FontId::default(),
             egui::Color32::WHITE,
         );

@@ -4,6 +4,7 @@
 
 pub mod data_chart;
 pub mod labeled_field;
+pub mod placeholder_tile;
 pub mod prominent_button;
 pub mod status_badge;
 pub mod track_grid;
