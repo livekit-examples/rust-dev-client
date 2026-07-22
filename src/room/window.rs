@@ -54,19 +54,10 @@ impl RoomWindow {
     }
 
     fn connect(&mut self) {
-        let token = match self.request.auth.access_token() {
-            Ok(token) => token,
-            Err(err) => {
-                self.connecting = false;
-                self.connection_failure = Some(err);
-                return;
-            }
-        };
         self.connecting = true;
         self.connection_failure = None;
         let _ = self.service.send(AsyncCmd::RoomConnect {
-            url: self.request.url.clone(),
-            token,
+            auth: Box::new(self.request.auth.clone()),
             auto_subscribe: self.request.auto_subscribe,
             dynacast: self.request.dynacast,
             enable_e2ee: self.request.enable_e2ee,
@@ -85,7 +76,7 @@ impl RoomWindow {
             UiCmd::ConnectResult { result } => {
                 self.connecting = false;
                 if let Err(err) = result {
-                    self.connection_failure = Some(err.to_string());
+                    self.connection_failure = Some(err);
                 }
             }
             UiCmd::DataTrackPublished { track } => {
