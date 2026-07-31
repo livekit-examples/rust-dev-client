@@ -85,7 +85,7 @@ jobs:
       - name: Install Platform Dependencies
         uses: ./.github/actions/platform-deps
       - name: Clippy Check
-        uses: clechasseur/rs-clippy-check@62ad100473a5e6513e86407b859091115ec89ae3 # v6.0.5
+        uses: clechasseur/rs-clippy-check@e198ae0533dc69d707c383951d90dc356a692026 # v6.0.6
         with:
           args: --all-targets -- -D warnings --no-deps
   cspell:
