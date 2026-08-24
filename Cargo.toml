@@ -24,7 +24,7 @@ livekit-token-source = { version = "0.1.1", features = ["rustls-tls-native-roots
 
 # Building against a local rust-sdks checkout (see "Building against a local
 # rust-sdks" in README.md). To build against the released crates instead,
-# comment out the three lines below and uncomment the ones above:
+# uncomment out the three lines below and comment the ones above:
 # livekit = { path = "../rust-sdks/livekit", features = ["rustls-tls-native-roots"] }
 # livekit-api = { path = "../rust-sdks/livekit-api", default-features = false, features = ["access-token"] }
 # livekit-token-source = { path = "../rust-sdks/livekit-token-source", features = ["rustls-tls-native-roots"] }
