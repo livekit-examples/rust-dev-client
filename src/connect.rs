@@ -1,26 +1,42 @@
 use crate::ui::{labeled_field::LabeledTextEdit, prominent_button::ProminentButton};
+use livekit_token_source::{
+    TokenSourceConfigurable, TokenSourceFetchOptions, development_token_server,
+};
 
-/// How a room connection is authenticated.
-#[derive(Clone)]
+/// How a room connection is authenticated. The methods that target a known
+/// server carry its URL; the token-source method learns it from the development token server.
+#[derive(Clone, Debug)]
 pub enum Auth {
     /// A pre-generated access token (the room is encoded in it).
-    Token(String),
+    Token { url: String, token: String },
     /// API credentials from which a join token is generated on demand.
     ApiKey {
+        url: String,
         api_key: String,
         api_secret: String,
         identity: String,
         room: String,
     },
+    /// A LiveKit Cloud development token server, which provides both the server
+    /// URL and the join token. `options` customizes the request; unset
+    /// fields are left to server defaults.
+    DevelopmentTokenServer {
+        token_server_id: String,
+        options: TokenSourceFetchOptions,
+    },
 }
 
 impl Auth {
-    /// Resolve to a room-connection JWT, generating one from the API credentials
-    /// when this is the API-key method.
-    pub fn access_token(&self) -> Result<String, String> {
+    /// Resolve to `(server_url, token)`: the JWT is generated locally for the
+    /// API-key method, fetched over HTTP for the token-source method.
+    ///
+    /// Async because of that fetch — call it from the service task, not the UI
+    /// thread.
+    pub async fn connection_details(&self) -> Result<(String, String), String> {
         match self {
-            Auth::Token(token) => Ok(token.clone()),
+            Auth::Token { url, token } => Ok((url.clone(), token.clone())),
             Auth::ApiKey {
+                url,
                 api_key,
                 api_secret,
                 identity,
@@ -34,7 +50,30 @@ impl Auth {
                     ..Default::default()
                 })
                 .to_jwt()
+                .map(|token| (url.clone(), token))
                 .map_err(|e| e.to_string()),
+            Auth::DevelopmentTokenServer {
+                token_server_id,
+                options,
+            } => {
+                let token_source = development_token_server(token_server_id);
+                let response = token_source
+                    .fetch(options)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok((response.server_url, response.participant_token))
+            }
+        }
+    }
+
+    /// Short label of the connection target for window titles: the server URL
+    /// when known up front, otherwise the token server id.
+    pub fn target_label(&self) -> &str {
+        match self {
+            Auth::Token { url, .. } | Auth::ApiKey { url, .. } => url,
+            Auth::DevelopmentTokenServer {
+                token_server_id, ..
+            } => token_server_id,
         }
     }
 }
@@ -43,7 +82,6 @@ impl Auth {
 /// per application, passed to each room window as it is opened.
 #[derive(Clone)]
 pub struct ConnectSettings {
-    pub url: String,
     pub auth: Auth,
     pub key: String,
     pub auto_subscribe: bool,
@@ -59,6 +97,53 @@ enum AuthMethod {
     #[default]
     ApiKey,
     Token,
+    DevelopmentTokenServer,
+}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct TokenSourceOptions {
+    room_name: String,
+    participant_name: String,
+    participant_identity: String,
+    participant_metadata: String,
+    agent_name: String,
+    agent_metadata: String,
+    agent_deployment: String,
+}
+
+impl From<&TokenSourceOptions> for TokenSourceFetchOptions {
+    fn from(value: &TokenSourceOptions) -> Self {
+        // Empty (or whitespace-only) fields are left unset so the
+        // token server applies its defaults.
+        let opt = |s: &str| {
+            let s = s.trim();
+            (!s.is_empty()).then(|| s.to_string())
+        };
+        let mut options = TokenSourceFetchOptions::new();
+        if let Some(v) = opt(&value.room_name) {
+            options = options.with_room_name(v);
+        }
+        if let Some(v) = opt(&value.participant_name) {
+            options = options.with_participant_name(v);
+        }
+        if let Some(v) = opt(&value.participant_identity) {
+            options = options.with_participant_identity(v);
+        }
+        if let Some(v) = opt(&value.participant_metadata) {
+            options = options.with_participant_metadata(v);
+        }
+        if let Some(v) = opt(&value.agent_name) {
+            options = options.with_agent_name(v);
+        }
+        if let Some(v) = opt(&value.agent_metadata) {
+            options = options.with_agent_metadata(v);
+        }
+        if let Some(v) = opt(&value.agent_deployment) {
+            options = options.with_deployment(v);
+        }
+        options
+    }
 }
 
 /// The root window: a welcome screen holding the only connect form in the app.
@@ -74,6 +159,8 @@ pub struct ConnectView {
     method: AuthMethod,
     url: String,
     token: String,
+    token_server_id: String,
+    token_source_options: TokenSourceOptions,
     api_key: String,
     api_secret: String,
     identity: String,
@@ -101,6 +188,8 @@ impl Default for ConnectView {
             method: AuthMethod::default(),
             url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
             token: env_or("LIVEKIT_TOKEN", ""),
+            token_server_id: String::new(),
+            token_source_options: TokenSourceOptions::default(),
             api_key: env_or("LIVEKIT_API_KEY", "devkey"),
             api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
@@ -116,32 +205,43 @@ impl Default for ConnectView {
 
 impl ConnectView {
     fn is_connect_enabled(&self) -> bool {
-        if self.url.trim().is_empty() {
-            return false;
-        }
+        // The URL only matters for the methods that use it; the token-source
+        // method gets its server URL from the development token server response.
         match self.method {
             AuthMethod::ApiKey => {
-                !self.api_key.trim().is_empty()
+                !self.url.trim().is_empty()
+                    && !self.api_key.trim().is_empty()
                     && !self.api_secret.trim().is_empty()
                     && !self.identity.trim().is_empty()
                     && !self.room.trim().is_empty()
             }
-            AuthMethod::Token => !self.token.trim().is_empty(),
+            AuthMethod::Token => !self.url.trim().is_empty() && !self.token.trim().is_empty(),
+            AuthMethod::DevelopmentTokenServer => !self.token_server_id.trim().is_empty(),
         }
     }
 
     fn current_settings(&self) -> ConnectSettings {
         let auth = match self.method {
             AuthMethod::ApiKey => Auth::ApiKey {
+                url: self.url.clone(),
                 api_key: self.api_key.clone(),
                 api_secret: self.api_secret.clone(),
                 identity: self.identity.clone(),
                 room: self.room.clone(),
             },
-            AuthMethod::Token => Auth::Token(self.token.clone()),
+            AuthMethod::Token => Auth::Token {
+                url: self.url.clone(),
+                token: self.token.clone(),
+            },
+            AuthMethod::DevelopmentTokenServer => {
+                let options = TokenSourceFetchOptions::from(&self.token_source_options);
+                Auth::DevelopmentTokenServer {
+                    token_server_id: self.token_server_id.clone(),
+                    options,
+                }
+            }
         };
         ConnectSettings {
-            url: self.url.clone(),
             auth,
             key: self.key.clone(),
             auto_subscribe: self.auto_subscribe,
@@ -218,12 +318,14 @@ impl egui::Widget for ConnectForm<'_> {
             ui.label(egui::RichText::new("Connect to a Room").text_style(egui::TextStyle::Heading));
             ui.add_space(8.0);
 
-            ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
-            ui.add_space(8.0);
-
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
+                ui.selectable_value(
+                    &mut view.method,
+                    AuthMethod::DevelopmentTokenServer,
+                    "TokenSource",
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .add(egui::Button::selectable(view.show_secrets, "👁"))
@@ -239,15 +341,23 @@ impl egui::Widget for ConnectForm<'_> {
             // the eye toggle above is on.
             let mask = !view.show_secrets;
 
-            // Scope each method's fields under a distinct id so switching tabs
-            // is seen as a layout change, not an unstable widget id (egui warns
-            // when a rect's id changes between passes under the same parent).
-            ui.push_id(view.method, |ui| match view.method {
+            // Scope the method's fields under a *constant* id. The single-field
+            // tabs (Token / TokenSource) render the same full-width widget at the
+            // same rect, so a per-method salt would give that rect a different id
+            // each switch — which is exactly what egui's "rect changed id between
+            // passes" warning flags. A stable salt keeps the id constant.
+            // The URL lives inside the Token / API Key tabs (shared between
+            // them): the token-source method gets its URL from the development token server.
+            ui.push_id("auth_method_fields", |ui| match view.method {
                 AuthMethod::Token => {
+                    ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
+                    ui.add_space(8.0);
                     ui.add(LabeledTextEdit::singleline("Token", &mut view.token).password(mask));
                     ui.add_space(8.0);
                 }
                 AuthMethod::ApiKey => {
+                    ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
+                    ui.add_space(8.0);
                     ui.columns(2, |columns| {
                         columns[0].add(
                             LabeledTextEdit::singleline("API Key", &mut view.api_key)
@@ -263,6 +373,59 @@ impl egui::Widget for ConnectForm<'_> {
                         columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
                         columns[1].add(LabeledTextEdit::singleline("Room", &mut view.room));
                     });
+                    ui.add_space(8.0);
+                }
+                AuthMethod::DevelopmentTokenServer => {
+                    ui.add(LabeledTextEdit::singleline(
+                        "Token Server Id",
+                        &mut view.token_server_id,
+                    ));
+                    ui.add_space(8.0);
+
+                    ui.label(
+                        egui::RichText::new(
+                            "Optional overrides — empty fields use server defaults",
+                        )
+                        .text_style(egui::TextStyle::Small),
+                    );
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Room Name",
+                            &mut view.token_source_options.room_name,
+                        ));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Participant Name",
+                            &mut view.token_source_options.participant_name,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Participant Identity",
+                            &mut view.token_source_options.participant_identity,
+                        ));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Participant Metadata",
+                            &mut view.token_source_options.participant_metadata,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.columns(2, |columns| {
+                        columns[0].add(LabeledTextEdit::singleline(
+                            "Agent Name",
+                            &mut view.token_source_options.agent_name,
+                        ));
+                        columns[1].add(LabeledTextEdit::singleline(
+                            "Agent Deployment",
+                            &mut view.token_source_options.agent_deployment,
+                        ));
+                    });
+                    ui.add_space(8.0);
+                    ui.add(LabeledTextEdit::singleline(
+                        "Agent Metadata",
+                        &mut view.token_source_options.agent_metadata,
+                    ));
                     ui.add_space(8.0);
                 }
             });

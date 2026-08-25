@@ -20,12 +20,14 @@ wgpu = "29.0"
 winit = { version = "0.30.13", features = [ "android-native-activity" ] }
 livekit = { version = "0.8.3", features = ["rustls-tls-native-roots"] }
 livekit-api = { version = "0.6.3", default-features = false, features = ["access-token"] }
+livekit-token-source = { version = "0.1.1", features = ["rustls-tls-native-roots"] }
 
-# For local SDK development, comment out the two lines above and uncomment these
-# (clone https://github.com/livekit/rust-sdks to ../rust-sdks first; see
-# "Building against a local rust-sdks" in README.md):
+# Building against a local rust-sdks checkout (see "Building against a local
+# rust-sdks" in README.md). To build against the released crates instead,
+# uncomment out the three lines below and comment the ones above:
 # livekit = { path = "../rust-sdks/livekit", features = ["rustls-tls-native-roots"] }
 # livekit-api = { path = "../rust-sdks/livekit-api", default-features = false, features = ["access-token"] }
+# livekit-token-source = { path = "../rust-sdks/livekit-token-source", features = ["rustls-tls-native-roots"] }
 
 [package.metadata.bundle]
 name = "LiveKit Client"

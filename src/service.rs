@@ -1,3 +1,4 @@
+use crate::connect::Auth;
 use crate::media::{LogoTrack, MicTrack, SineParameters, SineTrack};
 use livekit::{
     SimulateScenario, StreamByteOptions, StreamTextOptions,
@@ -12,8 +13,9 @@ use tokio::sync::mpsc::{self, error::SendError};
 #[derive(Debug)]
 pub enum AsyncCmd {
     RoomConnect {
-        url: String,
-        token: String,
+        /// Boxed to keep `AsyncCmd` small (clippy: `result_large_err` on
+        /// [`LkService::send`]); the token-source options make `Auth` large.
+        auth: Box<Auth>,
         auto_subscribe: bool,
         dynacast: bool,
         enable_e2ee: bool,
@@ -64,7 +66,9 @@ pub enum DataStreamPayload {
 #[derive(Debug)]
 pub enum UiCmd {
     ConnectResult {
-        result: RoomResult<()>,
+        /// `Err` is a human-readable message: token resolution and room
+        /// connection can each fail, with different error types.
+        result: Result<(), String>,
     },
     RoomEvent {
         event: RoomEvent,
@@ -161,13 +165,24 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
     while let Some(event) = cmd_rx.recv().await {
         match event {
             AsyncCmd::RoomConnect {
-                url,
-                token,
+                auth,
                 auto_subscribe,
                 dynacast,
                 enable_e2ee,
                 key,
             } => {
+                // Resolved here rather than UI-side: the token-source method
+                // fetches the connection details over HTTP, which must not
+                // block the UI.
+                let (url, token) = match auth.connection_details().await {
+                    Ok(details) => details,
+                    Err(err) => {
+                        log::error!("failed to resolve connection details: {err}");
+                        let _ = inner.ui_tx.send(UiCmd::ConnectResult { result: Err(err) });
+                        continue;
+                    }
+                };
+
                 log::info!("connecting to room: {}", url);
 
                 let key_provider =
@@ -217,7 +232,9 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     let _ = inner.ui_tx.send(UiCmd::ConnectResult { result: Ok(()) });
                 } else if let Err(err) = res {
                     log::error!("failed to connect to room: {:?}", err);
-                    let _ = inner.ui_tx.send(UiCmd::ConnectResult { result: Err(err) });
+                    let _ = inner.ui_tx.send(UiCmd::ConnectResult {
+                        result: Err(err.to_string()),
+                    });
                 }
             }
             AsyncCmd::RoomDisconnect => {
