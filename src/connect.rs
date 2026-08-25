@@ -20,7 +20,7 @@ pub enum Auth {
     /// A LiveKit Cloud development token server, which provides both the server
     /// URL and the join token. `options` customizes the request; unset
     /// fields are left to server defaults.
-    TokenSource {
+    DevelopmentTokenServer {
         token_server_id: String,
         options: TokenSourceFetchOptions,
     },
@@ -52,7 +52,7 @@ impl Auth {
                 .to_jwt()
                 .map(|token| (url.clone(), token))
                 .map_err(|e| e.to_string()),
-            Auth::TokenSource {
+            Auth::DevelopmentTokenServer {
                 token_server_id,
                 options,
             } => {
@@ -71,7 +71,7 @@ impl Auth {
     pub fn target_label(&self) -> &str {
         match self {
             Auth::Token { url, .. } | Auth::ApiKey { url, .. } => url,
-            Auth::TokenSource {
+            Auth::DevelopmentTokenServer {
                 token_server_id, ..
             } => token_server_id,
         }
@@ -97,7 +97,53 @@ enum AuthMethod {
     #[default]
     ApiKey,
     Token,
-    TokenSource,
+    DevelopmentTokenServer,
+}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct TokenSourceOptions {
+    room_name: String,
+    participant_name: String,
+    participant_identity: String,
+    participant_metadata: String,
+    agent_name: String,
+    agent_metadata: String,
+    agent_deployment: String,
+}
+
+impl From<&TokenSourceOptions> for TokenSourceFetchOptions {
+    fn from(value: &TokenSourceOptions) -> Self {
+        // Empty (or whitespace-only) fields are left unset so the
+        // token server applies its defaults.
+        let opt = |s: &str| {
+            let s = s.trim();
+            (!s.is_empty()).then(|| s.to_string())
+        };
+        let mut options = TokenSourceFetchOptions::new();
+        if let Some(v) = opt(&value.room_name) {
+            options = options.with_room_name(v);
+        }
+        if let Some(v) = opt(&value.participant_name) {
+            options = options.with_participant_name(v);
+        }
+        if let Some(v) = opt(&value.participant_identity) {
+            options = options.with_participant_identity(v);
+        }
+        if let Some(v) = opt(&value.participant_metadata) {
+            options = options.with_participant_metadata(v);
+        }
+        if let Some(v) = opt(&value.agent_name) {
+            options = options.with_agent_name(v);
+        }
+        if let Some(v) = opt(&value.agent_metadata) {
+            options = options.with_agent_metadata(v);
+        }
+        if let Some(v) = opt(&value.agent_deployment) {
+            options = options.with_deployment(v);
+        }
+        options
+    }
 }
 
 /// The root window: a welcome screen holding the only connect form in the app.
@@ -114,15 +160,7 @@ pub struct ConnectView {
     url: String,
     token: String,
     token_server_id: String,
-    // Token-source fetch options (`ts_` to keep them apart from the API-key
-    // tab's identity/room). Empty means "omit, let the server default".
-    ts_room_name: String,
-    ts_participant_name: String,
-    ts_participant_identity: String,
-    ts_participant_metadata: String,
-    ts_agent_name: String,
-    ts_agent_metadata: String,
-    ts_agent_deployment: String,
+    token_source_options: TokenSourceOptions,
     api_key: String,
     api_secret: String,
     identity: String,
@@ -150,14 +188,8 @@ impl Default for ConnectView {
             method: AuthMethod::default(),
             url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
             token: env_or("LIVEKIT_TOKEN", ""),
-            token_server_id: "token-server-id".to_string(),
-            ts_room_name: String::new(),
-            ts_participant_name: String::new(),
-            ts_participant_identity: String::new(),
-            ts_participant_metadata: String::new(),
-            ts_agent_name: String::new(),
-            ts_agent_metadata: String::new(),
-            ts_agent_deployment: String::new(),
+            token_server_id: String::new(),
+            token_source_options: TokenSourceOptions::default(),
             api_key: env_or("LIVEKIT_API_KEY", "devkey"),
             api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
@@ -184,7 +216,7 @@ impl ConnectView {
                     && !self.room.trim().is_empty()
             }
             AuthMethod::Token => !self.url.trim().is_empty() && !self.token.trim().is_empty(),
-            AuthMethod::TokenSource => !self.token_server_id.trim().is_empty(),
+            AuthMethod::DevelopmentTokenServer => !self.token_server_id.trim().is_empty(),
         }
     }
 
@@ -201,36 +233,9 @@ impl ConnectView {
                 url: self.url.clone(),
                 token: self.token.clone(),
             },
-            AuthMethod::TokenSource => {
-                // Empty (or whitespace-only) fields are left unset so the
-                // token server applies its defaults.
-                let opt = |s: &str| {
-                    let s = s.trim();
-                    (!s.is_empty()).then(|| s.to_string())
-                };
-                let mut options = TokenSourceFetchOptions::new();
-                if let Some(v) = opt(&self.ts_room_name) {
-                    options = options.with_room_name(v);
-                }
-                if let Some(v) = opt(&self.ts_participant_name) {
-                    options = options.with_participant_name(v);
-                }
-                if let Some(v) = opt(&self.ts_participant_identity) {
-                    options = options.with_participant_identity(v);
-                }
-                if let Some(v) = opt(&self.ts_participant_metadata) {
-                    options = options.with_participant_metadata(v);
-                }
-                if let Some(v) = opt(&self.ts_agent_name) {
-                    options = options.with_agent_name(v);
-                }
-                if let Some(v) = opt(&self.ts_agent_metadata) {
-                    options = options.with_agent_metadata(v);
-                }
-                if let Some(v) = opt(&self.ts_agent_deployment) {
-                    options = options.with_deployment(v);
-                }
-                Auth::TokenSource {
+            AuthMethod::DevelopmentTokenServer => {
+                let options = TokenSourceFetchOptions::from(&self.token_source_options);
+                Auth::DevelopmentTokenServer {
                     token_server_id: self.token_server_id.clone(),
                     options,
                 }
@@ -316,7 +321,7 @@ impl egui::Widget for ConnectForm<'_> {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
-                ui.selectable_value(&mut view.method, AuthMethod::TokenSource, "TokenSource");
+                ui.selectable_value(&mut view.method, AuthMethod::DevelopmentTokenServer, "TokenSource");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .add(egui::Button::selectable(view.show_secrets, "👁"))
@@ -366,7 +371,7 @@ impl egui::Widget for ConnectForm<'_> {
                     });
                     ui.add_space(8.0);
                 }
-                AuthMethod::TokenSource => {
+                AuthMethod::DevelopmentTokenServer => {
                     ui.add(LabeledTextEdit::singleline(
                         "Token Server Id",
                         &mut view.token_server_id,
@@ -383,39 +388,39 @@ impl egui::Widget for ConnectForm<'_> {
                     ui.columns(2, |columns| {
                         columns[0].add(LabeledTextEdit::singleline(
                             "Room Name",
-                            &mut view.ts_room_name,
+                            &mut view.token_source_options.room_name,
                         ));
                         columns[1].add(LabeledTextEdit::singleline(
                             "Participant Name",
-                            &mut view.ts_participant_name,
+                            &mut view.token_source_options.participant_name,
                         ));
                     });
                     ui.add_space(8.0);
                     ui.columns(2, |columns| {
                         columns[0].add(LabeledTextEdit::singleline(
                             "Participant Identity",
-                            &mut view.ts_participant_identity,
+                            &mut view.token_source_options.participant_identity,
                         ));
                         columns[1].add(LabeledTextEdit::singleline(
                             "Participant Metadata",
-                            &mut view.ts_participant_metadata,
+                            &mut view.token_source_options.participant_metadata,
                         ));
                     });
                     ui.add_space(8.0);
                     ui.columns(2, |columns| {
                         columns[0].add(LabeledTextEdit::singleline(
                             "Agent Name",
-                            &mut view.ts_agent_name,
+                            &mut view.token_source_options.agent_name,
                         ));
                         columns[1].add(LabeledTextEdit::singleline(
                             "Agent Deployment",
-                            &mut view.ts_agent_deployment,
+                            &mut view.token_source_options.agent_deployment,
                         ));
                     });
                     ui.add_space(8.0);
                     ui.add(LabeledTextEdit::singleline(
                         "Agent Metadata",
-                        &mut view.ts_agent_metadata,
+                        &mut view.token_source_options.agent_metadata,
                     ));
                     ui.add_space(8.0);
                 }
