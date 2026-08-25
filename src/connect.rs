@@ -321,7 +321,11 @@ impl egui::Widget for ConnectForm<'_> {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut view.method, AuthMethod::ApiKey, "API Key");
                 ui.selectable_value(&mut view.method, AuthMethod::Token, "Token");
-                ui.selectable_value(&mut view.method, AuthMethod::DevelopmentTokenServer, "TokenSource");
+                ui.selectable_value(
+                    &mut view.method,
+                    AuthMethod::DevelopmentTokenServer,
+                    "TokenSource",
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let toggle = ui
                         .add(egui::Button::selectable(view.show_secrets, "👁"))
