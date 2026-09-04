@@ -2990,11 +2990,12 @@ dependencies = [
 
 [[package]]
 name = "livekit-token-source"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1a446c9335adaa5ccbf242fd485c7a568ff2c73c7b57fdfba0d16141f04d710"
+checksum = "f686ce4be5975c8ad522ceaf8d1c2428f83f76d4fdd4ee1d25effaec80ff5de6"
 dependencies = [
  "async-trait",
+ "base64 0.21.7",
  "livekit-net",
  "serde",
  "serde_json",
