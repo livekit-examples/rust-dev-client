@@ -11,6 +11,7 @@ updates:
     groups:
       livekit-crates:
         patterns:
+          - livekit
           - livekit-*
         update-types:
           - minor
