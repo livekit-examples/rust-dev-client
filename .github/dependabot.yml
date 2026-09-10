@@ -8,6 +8,22 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      livekit-crates:
+        patterns:
+          - livekit-*
+        update-types:
+          - minor
+          - patch
+      egui-crates:
+        patterns:
+          - eframe
+          - egui
+          - egui-wgpu
+          - wgpu
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: github-actions
     directory: /
     schedule:
