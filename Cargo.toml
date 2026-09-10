@@ -35,6 +35,10 @@ identifier = "io.livekit.rust-dev-client"
 copyright = "2026 LiveKit, Inc."
 category = "public.app-category.developer-tools"
 
+[profile.dev]
+debug = "line-tables-only"
+# Set to `true` instead for enhanced debugging at the cost of slower builds.
+
 [profile.release]
 opt-level = 3
 lto = "fat"
