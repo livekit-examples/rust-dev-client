@@ -26,7 +26,7 @@ jobs:
       - name: Install Platform Dependencies
         uses: ./.github/actions/platform-deps
       - name: Install Nextest
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with: { tool: nextest@0.9 }
       - name: Test
         run: cargo nextest run --profile ci --all-targets --no-tests warn
@@ -47,7 +47,7 @@ jobs:
       - name: Install Platform Dependencies
         uses: ./.github/actions/platform-deps
       - name: Install cargo-bundle
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with: { tool: cargo-bundle@0.11.0 }
       - name: Bundle
         run: cargo bundle
