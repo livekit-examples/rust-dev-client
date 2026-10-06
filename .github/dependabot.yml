@@ -16,6 +16,7 @@ updates:
         update-types:
           - minor
           - patch
+          - major
       egui-crates:
         patterns:
           - eframe
@@ -25,6 +26,7 @@ updates:
         update-types:
           - minor
           - patch
+          - major
   - package-ecosystem: github-actions
     directory: /
     schedule:
