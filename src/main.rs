@@ -6,12 +6,9 @@ fn main() {
         .parse_default_env()
         .init();
 
-    // FIXME: root window has to always be on top to prevent glitches with room windows.
-
     let viewport = egui::ViewportBuilder::default()
         .with_inner_size([380.0, 480.0])
         .with_resizable(false)
-        .with_always_on_top()
         .with_minimize_button(false);
 
     let options = eframe::NativeOptions {
