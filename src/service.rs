@@ -1,5 +1,5 @@
 use crate::connect::Auth;
-use crate::media::{LogoTrack, MicTrack, SineParameters, SineTrack};
+use crate::media::{CaptureSource, CaptureTrack, MicTrack, SineParameters, SineTrack};
 use livekit::{
     SimulateScenario, StreamByteOptions, StreamTextOptions,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
@@ -7,6 +7,7 @@ use livekit::{
     track::VideoQuality,
 };
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, error::SendError};
 
@@ -25,7 +26,9 @@ pub enum AsyncCmd {
     SimulateScenario {
         scenario: SimulateScenario,
     },
-    ToggleLogo,
+    ToggleCapture {
+        source: CaptureSource,
+    },
     ToggleSine,
     ToggleMic,
     ToggleDataTrack,
@@ -150,7 +153,7 @@ impl LkService {
 async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedReceiver<AsyncCmd>) {
     struct RunningState {
         room: Arc<Room>,
-        logo_track: LogoTrack,
+        capture_tracks: HashMap<CaptureSource, CaptureTrack>,
         sine_track: SineTrack,
         mic_track: MicTrack,
         data_track: Option<LocalDataTrack>,
@@ -219,7 +222,9 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                     running_state = Some(RunningState {
                         room: new_room.clone(),
-                        logo_track: LogoTrack::new(new_room.clone()),
+                        capture_tracks: CaptureSource::ALL
+                            .map(|source| (source, CaptureTrack::new(new_room.clone(), source)))
+                            .into(),
                         sine_track: SineTrack::new(new_room.clone(), SineParameters::default()),
                         mic_track: MicTrack::new(new_room.clone()),
                         data_track: None,
@@ -252,12 +257,14 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     log::error!("failed to simulate scenario: {:?}", err);
                 }
             }
-            AsyncCmd::ToggleLogo => {
-                if let Some(state) = running_state.as_mut() {
-                    if state.logo_track.is_published() {
-                        state.logo_track.unpublish().await.unwrap();
-                    } else {
-                        state.logo_track.publish().await.unwrap();
+            AsyncCmd::ToggleCapture { source } => {
+                if let Some(state) = running_state.as_mut()
+                    && let Some(track) = state.capture_tracks.get_mut(&source)
+                {
+                    if track.is_published() {
+                        track.unpublish().await;
+                    } else if let Err(err) = track.publish().await {
+                        log::error!("failed to publish {} capture track: {err}", source.label());
                     }
                 }
             }

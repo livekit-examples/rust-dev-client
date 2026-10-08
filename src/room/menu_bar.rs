@@ -1,3 +1,4 @@
+use crate::media::CaptureSource;
 use crate::room::RoomContext;
 use crate::service::{AsyncCmd, LkService};
 use livekit::SimulateScenario;
@@ -23,8 +24,14 @@ impl egui::Widget for TopMenuBar<'_> {
 
 fn publish_menu(ui: &mut egui::Ui, service: &LkService) {
     ui.menu_button("Publish", |ui| {
-        if ui.button("Logo").clicked() {
-            let _ = service.send(AsyncCmd::ToggleLogo);
+        for source in CaptureSource::ALL {
+            if ui
+                .button(source.label())
+                .on_hover_text(source.description())
+                .clicked()
+            {
+                let _ = service.send(AsyncCmd::ToggleCapture { source });
+            }
         }
         if ui.button("Sine Wave").clicked() {
             let _ = service.send(AsyncCmd::ToggleSine);
