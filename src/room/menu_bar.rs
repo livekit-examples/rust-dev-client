@@ -33,10 +33,10 @@ fn publish_menu(ui: &mut egui::Ui, service: &LkService) {
                 let _ = service.send(AsyncCmd::ToggleCapture { source });
             }
         }
-        if ui.button("Sine Wave").clicked() {
+        if ui.button("Audio: Sine Wave").clicked() {
             let _ = service.send(AsyncCmd::ToggleSine);
         }
-        if ui.button("Data Track").clicked() {
+        if ui.button("Data Track: Float").clicked() {
             let _ = service.send(AsyncCmd::ToggleDataTrack);
         }
     });

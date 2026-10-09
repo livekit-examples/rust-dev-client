@@ -264,7 +264,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     if track.is_published() {
                         track.unpublish().await;
                     } else if let Err(err) = track.publish().await {
-                        log::error!("failed to publish {} capture track: {err}", source.label());
+                        log::error!("failed to publish {source:?} capture track: {err}");
                     }
                 }
             }

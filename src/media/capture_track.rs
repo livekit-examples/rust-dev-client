@@ -32,9 +32,9 @@ impl CaptureSource {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Gradient => "Gradient",
-            Self::Logo => "Logo",
-            Self::Clock => "Clock",
+            Self::Gradient => "Video: Gradient",
+            Self::Logo => "Video: Logo",
+            Self::Clock => "Video: Clock",
         }
     }
 
