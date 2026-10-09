@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["full", "parking_lot"] }
 wgpu = "30.0"
 winit = { version = "0.30.13", features = [ "android-native-activity" ] }
 livekit = { version = "0.8.3", features = ["rustls-tls-native-roots"] }
-livekit-api = { version = "0.6.3", default-features = false, features = ["access-token"] }
+livekit-api = { version = "0.8.1", default-features = false, features = ["access-token"] }
 livekit-token-source = { version = "0.1.1", features = ["rustls-tls-native-roots"] }
 
 # Building against a local rust-sdks checkout (see "Building against a local
