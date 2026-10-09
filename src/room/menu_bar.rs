@@ -1,11 +1,12 @@
-use crate::media::CaptureSource;
 use crate::room::RoomContext;
-use crate::service::{AsyncCmd, LkService};
+use crate::service::{AsyncCmd, LkService, LocalSource, PublishState};
 use livekit::SimulateScenario;
+use std::collections::HashMap;
 
 /// Top menu bar: Simulate / Publish / Debug actions, all sent to the service.
 pub struct TopMenuBar<'a> {
     pub ctx: &'a RoomContext<'a>,
+    pub publish_states: &'a HashMap<LocalSource, PublishState>,
 }
 
 impl egui::Widget for TopMenuBar<'_> {
@@ -13,7 +14,7 @@ impl egui::Widget for TopMenuBar<'_> {
         let service = self.ctx.service;
         egui::MenuBar::new()
             .ui(ui, |ui| {
-                publish_menu(ui, service);
+                publish_menu(ui, service, self.publish_states);
                 simulate_menu(ui, service);
                 debug_menu(ui, service);
                 help_menu(ui);
@@ -22,22 +23,24 @@ impl egui::Widget for TopMenuBar<'_> {
     }
 }
 
-fn publish_menu(ui: &mut egui::Ui, service: &LkService) {
+fn publish_menu(
+    ui: &mut egui::Ui,
+    service: &LkService,
+    states: &HashMap<LocalSource, PublishState>,
+) {
     ui.menu_button("Publish", |ui| {
-        for source in CaptureSource::ALL {
+        for source in LocalSource::ALL {
+            let state = states.get(&source).copied().unwrap_or_default();
+            // Throwaway copy: the service owns the real state and reports it back.
+            let mut published = state == PublishState::Published;
+            let checkbox = egui::Checkbox::new(&mut published, source.label());
             if ui
-                .button(source.label())
+                .add_enabled(state != PublishState::Pending, checkbox)
                 .on_hover_text(source.description())
                 .clicked()
             {
-                let _ = service.send(AsyncCmd::ToggleCapture { source });
+                let _ = service.send(AsyncCmd::TogglePublish { source });
             }
-        }
-        if ui.button("Audio: Sine Wave").clicked() {
-            let _ = service.send(AsyncCmd::ToggleSine);
-        }
-        if ui.button("Data Track: Float").clicked() {
-            let _ = service.send(AsyncCmd::ToggleDataTrack);
         }
     });
 }

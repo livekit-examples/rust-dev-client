@@ -9,7 +9,7 @@ pub mod mic_track;
 pub mod sine_track;
 pub mod video_renderer;
 
-pub use capture_track::{CaptureSource, CaptureTrack};
+pub use capture_track::{CaptureSource, CaptureTrack, OnUnpublished};
 pub use mic_track::MicTrack;
 pub use sine_track::{SineParameters, SineTrack};
 pub use video_renderer::VideoRenderer;

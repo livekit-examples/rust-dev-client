@@ -19,6 +19,9 @@ const FRAMERATE_FPS: u32 = 30;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
+/// Called once the track is unpublished after its pump exits.
+pub type OnUnpublished = Arc<dyn Fn() + Send + Sync>;
+
 /// A user-publishable video source backed by `livekit-capture`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CaptureSource {
@@ -80,11 +83,12 @@ impl CaptureSource {
 ///
 /// The track's publication is tied to its pump: a task owns the running pump
 /// and unpublishes the track whenever the pump exits, whether stopped here or
-/// on its own (end of stream, error, or panic). Dropping stops the pump without
-/// waiting for the unpublish.
+/// on its own (end of stream, error, or panic), then calls `on_unpublished`.
+/// Dropping stops the pump without waiting for the unpublish.
 pub struct CaptureTrack {
     room: Arc<Room>,
     source: CaptureSource,
+    on_unpublished: OnUnpublished,
     handle: Option<TrackHandle>,
 }
 
@@ -95,10 +99,11 @@ struct TrackHandle {
 }
 
 impl CaptureTrack {
-    pub fn new(room: Arc<Room>, source: CaptureSource) -> Self {
+    pub fn new(room: Arc<Room>, source: CaptureSource, on_unpublished: OnUnpublished) -> Self {
         Self {
             room,
             source,
+            on_unpublished,
             handle: None,
         }
     }
@@ -135,12 +140,14 @@ impl CaptureTrack {
         };
         let stop = pump.stop_handle();
         let source = self.source;
+        let on_unpublished = self.on_unpublished.clone();
         let task = tokio::spawn(async move {
             let result = pump.join().await;
             log::info!("{source:?} capture pump exited: {result:?}");
             if let Err(err) = participant.unpublish_track(&track.sid()).await {
                 log::warn!("failed to unpublish {source:?} capture track: {err}");
             }
+            on_unpublished();
         });
         self.handle = Some(TrackHandle { stop, task });
         Ok(())
