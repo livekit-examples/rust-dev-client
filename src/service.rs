@@ -87,7 +87,7 @@ impl LocalSource {
         match self {
             Self::Capture(source) => source.label(),
             Self::Sine => "Audio: Sine Wave",
-            Self::DataTrack => "Data Track: Float",
+            Self::DataTrack => "Data Track: Slider",
         }
     }
 
@@ -95,7 +95,7 @@ impl LocalSource {
         match self {
             Self::Capture(source) => source.description(),
             Self::Sine => "Synthetic 440 Hz sine wave tone",
-            Self::DataTrack => "Data track carrying values set with a slider",
+            Self::DataTrack => "Integer from 0 to 512 set with a slider, sent as text",
         }
     }
 }
