@@ -7,7 +7,7 @@ use crate::{
     room::right_panel::{RightPanel, RightPanelState},
     room::status_bar::{StatusBar, StatusBarActions},
     room::track_grid_view::TrackGridView,
-    service::{AsyncCmd, LkService, UiCmd},
+    service::{AsyncCmd, LkService, LocalSource, PublishState, UiCmd},
 };
 use livekit::prelude::*;
 use std::collections::HashMap;
@@ -22,6 +22,7 @@ pub struct RoomWindow {
     video_renderers: HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
     local_data_tracks: Vec<LocalDataTrackTile>,
     remote_data_tracks: Vec<RemoteDataTrackTile>,
+    publish_states: HashMap<LocalSource, PublishState>,
     connecting: bool,
     connection_failure: Option<String>,
     render_state: egui_wgpu::RenderState,
@@ -44,6 +45,7 @@ impl RoomWindow {
             video_renderers: HashMap::new(),
             local_data_tracks: Vec::new(),
             remote_data_tracks: Vec::new(),
+            publish_states: HashMap::new(),
             connecting: false,
             connection_failure: None,
             render_state,
@@ -84,6 +86,9 @@ impl RoomWindow {
             }
             UiCmd::DataTrackUnpublished => {
                 self.local_data_tracks.clear();
+            }
+            UiCmd::PublishState { source, state } => {
+                self.publish_states.insert(source, state);
             }
             UiCmd::RpcSendResult { request_id, result } => {
                 self.right_panel.rpc.handle_send_result(request_id, result);
@@ -173,6 +178,7 @@ impl RoomWindow {
                         self.video_renderers.clear();
                         self.local_data_tracks.clear();
                         self.remote_data_tracks.clear();
+                        self.publish_states.clear();
                         self.right_panel.rpc.on_disconnect();
                         self.right_panel.data_streams.on_disconnect();
                     }
@@ -208,7 +214,10 @@ impl RoomWindow {
                         .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
                 .show(ui, |ui| {
-                    ui.add(TopMenuBar { ctx: &ctx });
+                    ui.add(TopMenuBar {
+                        ctx: &ctx,
+                        publish_states: &self.publish_states,
+                    });
                 });
 
             egui::Panel::bottom(ctx.id.with("status_bar"))
