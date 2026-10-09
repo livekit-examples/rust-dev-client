@@ -211,6 +211,30 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
     }
 
     impl RunningState {
+        /// Unpublishes every local track and reports each source unpublished.
+        async fn unpublish_all(&mut self, ui_tx: &mpsc::UnboundedSender<UiCmd>) {
+            for track in self.capture_tracks.values_mut() {
+                track.unpublish().await;
+            }
+            if let Err(err) = self.sine_track.unpublish().await {
+                log::warn!("failed to unpublish sine track: {err}");
+            }
+            if let Some(track) = self.data_track.take() {
+                track.unpublish();
+                let _ = ui_tx.send(UiCmd::DataTrackUnpublished);
+            }
+            if self.mic_track.is_published()
+                && let Some(platform_audio) = self.platform_audio.clone()
+                && let Err(err) = self.mic_track.unpublish(&platform_audio).await
+            {
+                log::warn!("failed to unpublish microphone: {err}");
+            }
+            for source in LocalSource::ALL {
+                let state = PublishState::Unpublished;
+                let _ = ui_tx.send(UiCmd::PublishState { source, state });
+            }
+        }
+
         /// Toggles `source` and returns whether it ends up published.
         async fn toggle_publish(
             &mut self,
@@ -269,9 +293,25 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
         }
     }
 
-    let mut running_state = None;
+    let mut running_state: Option<RunningState> = None;
+    let (disconnected_tx, mut disconnected_rx) = mpsc::unbounded_channel();
 
-    while let Some(event) = cmd_rx.recv().await {
+    loop {
+        let event = tokio::select! {
+            cmd = cmd_rx.recv() => {
+                let Some(cmd) = cmd else { break };
+                cmd
+            }
+            Some(()) = disconnected_rx.recv() => {
+                // Ignore a stale notice from a room we already replaced.
+                if let Some(mut state) = running_state.take_if(|state| {
+                    state.room.connection_state() == ConnectionState::Disconnected
+                }) {
+                    state.unpublish_all(&inner.ui_tx).await;
+                }
+                continue;
+            }
+        };
         match event {
             AsyncCmd::RoomConnect {
                 auth,
@@ -310,7 +350,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 if let Ok((new_room, events)) = res {
                     log::info!("connected to room: {}", new_room.name());
-                    tokio::spawn(room_task(inner.clone(), events));
+                    tokio::spawn(room_task(inner.clone(), events, disconnected_tx.clone()));
 
                     let new_room = Arc::new(new_room);
 
@@ -347,8 +387,9 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 }
             }
             AsyncCmd::RoomDisconnect => {
-                if let Some(state) = running_state.take() {
+                if let Some(mut state) = running_state.take() {
                     *inner.room.lock() = None;
+                    state.unpublish_all(&inner.ui_tx).await;
                     if let Err(err) = state.room.close().await {
                         log::error!("failed to disconnect from room: {:?}", err);
                     }
@@ -532,8 +573,15 @@ fn capture_tracks(
 
 /// Task basically used to forward room events to the UI.
 /// It will automatically close when the room is disconnected.
-async fn room_task(inner: Arc<ServiceInner>, mut events: mpsc::UnboundedReceiver<RoomEvent>) {
+async fn room_task(
+    inner: Arc<ServiceInner>,
+    mut events: mpsc::UnboundedReceiver<RoomEvent>,
+    disconnected_tx: mpsc::UnboundedSender<()>,
+) {
     while let Some(event) = events.recv().await {
+        if matches!(event, RoomEvent::Disconnected { .. }) {
+            let _ = disconnected_tx.send(());
+        }
         let _ = inner.ui_tx.send(UiCmd::RoomEvent { event });
     }
 }
