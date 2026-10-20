@@ -37,6 +37,15 @@ runs:
           libdrm-dev \
           libgbm-dev \
           libgl1-mesa-dev
+    - name: Install clang 21 (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # webrtc-sys links Chromium's hermetic libc++, which requires clang >= 21;
+        # ubuntu-latest ships clang 18. build.rs honors CXX.
+        curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+        echo "CC=clang-21" >> "$GITHUB_ENV"
+        echo "CXX=clang++-21" >> "$GITHUB_ENV"
     - name: Install hardware acceleration headers (Linux x86_64)
       if: runner.arch == 'X64' && runner.os == 'Linux'
       shell: bash

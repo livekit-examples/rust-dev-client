@@ -18,9 +18,10 @@ tokio = { version = "1", features = ["full", "parking_lot"] }
 # egui-wgpu 0.36 requires wgpu ^30.0; "30.0" resolves to a compatible 30.0.x.
 wgpu = "30.0"
 winit = { version = "0.30.13", features = [ "android-native-activity" ] }
-livekit = { version = "0.8.3", features = ["rustls-tls-native-roots"] }
-livekit-api = { version = "0.6.3", default-features = false, features = ["access-token"] }
-livekit-token-source = { version = "0.1.1", features = ["rustls-tls-native-roots"] }
+livekit = { version = "0.9.4", features = ["rustls-tls-native-roots"] }
+livekit-api = { version = "0.8.2", default-features = false, features = ["access-token"] }
+livekit-token-source = { version = "0.1.3", features = ["rustls-tls-native-roots"] }
+livekit-capture = { version = "0.1.4", default-features = false, features = ["source-pattern", "source-clock"] }
 
 # Building against a local rust-sdks checkout (see "Building against a local
 # rust-sdks" in README.md). To build against the released crates instead,
@@ -28,6 +29,7 @@ livekit-token-source = { version = "0.1.1", features = ["rustls-tls-native-roots
 # livekit = { path = "../rust-sdks/livekit", features = ["rustls-tls-native-roots"] }
 # livekit-api = { path = "../rust-sdks/livekit-api", default-features = false, features = ["access-token"] }
 # livekit-token-source = { path = "../rust-sdks/livekit-token-source", features = ["rustls-tls-native-roots"] }
+# livekit-capture = { path = "../rust-sdks/livekit-capture", default-features = false, features = ["source-pattern", "source-clock"] }
 
 [package.metadata.bundle]
 name = "LiveKit Client"

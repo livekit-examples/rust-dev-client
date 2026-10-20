@@ -1,5 +1,7 @@
 use crate::connect::Auth;
-use crate::media::{LogoTrack, MicTrack, SineParameters, SineTrack};
+use crate::media::{
+    CaptureSource, CaptureTrack, MicTrack, OnUnpublished, SineParameters, SineTrack,
+};
 use livekit::{
     SimulateScenario, StreamByteOptions, StreamTextOptions,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
@@ -7,6 +9,7 @@ use livekit::{
     track::VideoQuality,
 };
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, error::SendError};
 
@@ -25,10 +28,10 @@ pub enum AsyncCmd {
     SimulateScenario {
         scenario: SimulateScenario,
     },
-    ToggleLogo,
-    ToggleSine,
+    TogglePublish {
+        source: LocalSource,
+    },
     ToggleMic,
-    ToggleDataTrack,
     SubscribeTrack {
         publication: RemoteTrackPublication,
     },
@@ -63,6 +66,49 @@ pub enum DataStreamPayload {
     Bytes(Vec<u8>),
 }
 
+/// A local source the user can publish from the Publish menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LocalSource {
+    Capture(CaptureSource),
+    Sine,
+    DataTrack,
+}
+
+impl LocalSource {
+    pub const ALL: [Self; 5] = [
+        Self::Capture(CaptureSource::Gradient),
+        Self::Capture(CaptureSource::Logo),
+        Self::Capture(CaptureSource::Clock),
+        Self::Sine,
+        Self::DataTrack,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Capture(source) => source.label(),
+            Self::Sine => "Audio: Sine Wave",
+            Self::DataTrack => "Data Track: Slider",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Capture(source) => source.description(),
+            Self::Sine => "Synthetic 440 Hz sine wave tone",
+            Self::DataTrack => "Integer from 0 to 512 set with a slider, sent as text",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PublishState {
+    #[default]
+    Unpublished,
+    /// A publish or unpublish is in flight.
+    Pending,
+    Published,
+}
+
 #[derive(Debug)]
 pub enum UiCmd {
     ConnectResult {
@@ -77,6 +123,10 @@ pub enum UiCmd {
         track: LocalDataTrack,
     },
     DataTrackUnpublished,
+    PublishState {
+        source: LocalSource,
+        state: PublishState,
+    },
     RpcSendResult {
         request_id: u64,
         result: Result<String, RpcError>,
@@ -150,7 +200,7 @@ impl LkService {
 async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedReceiver<AsyncCmd>) {
     struct RunningState {
         room: Arc<Room>,
-        logo_track: LogoTrack,
+        capture_tracks: HashMap<CaptureSource, CaptureTrack>,
         sine_track: SineTrack,
         mic_track: MicTrack,
         data_track: Option<LocalDataTrack>,
@@ -160,9 +210,108 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
         platform_audio: Option<PlatformAudio>,
     }
 
-    let mut running_state = None;
+    impl RunningState {
+        /// Unpublishes every local track and reports each source unpublished.
+        async fn unpublish_all(&mut self, ui_tx: &mpsc::UnboundedSender<UiCmd>) {
+            for track in self.capture_tracks.values_mut() {
+                track.unpublish().await;
+            }
+            if let Err(err) = self.sine_track.unpublish().await {
+                log::warn!("failed to unpublish sine track: {err}");
+            }
+            if let Some(track) = self.data_track.take() {
+                track.unpublish();
+                let _ = ui_tx.send(UiCmd::DataTrackUnpublished);
+            }
+            if self.mic_track.is_published()
+                && let Some(platform_audio) = self.platform_audio.clone()
+                && let Err(err) = self.mic_track.unpublish(&platform_audio).await
+            {
+                log::warn!("failed to unpublish microphone: {err}");
+            }
+            for source in LocalSource::ALL {
+                let state = PublishState::Unpublished;
+                let _ = ui_tx.send(UiCmd::PublishState { source, state });
+            }
+        }
 
-    while let Some(event) = cmd_rx.recv().await {
+        /// Toggles `source` and returns whether it ends up published.
+        async fn toggle_publish(
+            &mut self,
+            source: LocalSource,
+            ui_tx: &mpsc::UnboundedSender<UiCmd>,
+        ) -> bool {
+            match source {
+                LocalSource::Capture(capture) => {
+                    let Some(track) = self.capture_tracks.get_mut(&capture) else {
+                        return false;
+                    };
+                    if track.is_published() {
+                        track.unpublish().await;
+                    } else if let Err(err) = track.publish().await {
+                        log::error!("failed to publish {capture:?} capture track: {err}");
+                    }
+                    track.is_published()
+                }
+                LocalSource::Sine => {
+                    let result = if self.sine_track.is_published() {
+                        self.sine_track.unpublish().await
+                    } else {
+                        self.sine_track.publish().await
+                    };
+                    if let Err(err) = result {
+                        log::error!("failed to toggle sine track: {err}");
+                    }
+                    self.sine_track.is_published()
+                }
+                LocalSource::DataTrack => {
+                    if let Some(track) = self.data_track.take() {
+                        track.unpublish();
+                        let _ = ui_tx.send(UiCmd::DataTrackUnpublished);
+                        return false;
+                    }
+                    match self
+                        .room
+                        .local_participant()
+                        .publish_data_track("slider")
+                        .await
+                    {
+                        Ok(track) => {
+                            let _ = ui_tx.send(UiCmd::DataTrackPublished {
+                                track: track.clone(),
+                            });
+                            self.data_track = Some(track);
+                            true
+                        }
+                        Err(err) => {
+                            log::error!("failed to publish data track: {err}");
+                            false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut running_state: Option<RunningState> = None;
+    let (disconnected_tx, mut disconnected_rx) = mpsc::unbounded_channel();
+
+    loop {
+        let event = tokio::select! {
+            cmd = cmd_rx.recv() => {
+                let Some(cmd) = cmd else { break };
+                cmd
+            }
+            Some(()) = disconnected_rx.recv() => {
+                // Ignore a stale notice from a room we already replaced.
+                if let Some(mut state) = running_state.take_if(|state| {
+                    state.room.connection_state() == ConnectionState::Disconnected
+                }) {
+                    state.unpublish_all(&inner.ui_tx).await;
+                }
+                continue;
+            }
+        };
         match event {
             AsyncCmd::RoomConnect {
                 auth,
@@ -201,7 +350,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 if let Ok((new_room, events)) = res {
                     log::info!("connected to room: {}", new_room.name());
-                    tokio::spawn(room_task(inner.clone(), events));
+                    tokio::spawn(room_task(inner.clone(), events, disconnected_tx.clone()));
 
                     let new_room = Arc::new(new_room);
 
@@ -219,7 +368,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                     running_state = Some(RunningState {
                         room: new_room.clone(),
-                        logo_track: LogoTrack::new(new_room.clone()),
+                        capture_tracks: capture_tracks(&new_room, &inner.ui_tx),
                         sine_track: SineTrack::new(new_room.clone(), SineParameters::default()),
                         mic_track: MicTrack::new(new_room.clone()),
                         data_track: None,
@@ -238,8 +387,9 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 }
             }
             AsyncCmd::RoomDisconnect => {
-                if let Some(state) = running_state.take() {
+                if let Some(mut state) = running_state.take() {
                     *inner.room.lock() = None;
+                    state.unpublish_all(&inner.ui_tx).await;
                     if let Err(err) = state.room.close().await {
                         log::error!("failed to disconnect from room: {:?}", err);
                     }
@@ -252,23 +402,20 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     log::error!("failed to simulate scenario: {:?}", err);
                 }
             }
-            AsyncCmd::ToggleLogo => {
-                if let Some(state) = running_state.as_mut() {
-                    if state.logo_track.is_published() {
-                        state.logo_track.unpublish().await.unwrap();
-                    } else {
-                        state.logo_track.publish().await.unwrap();
-                    }
-                }
-            }
-            AsyncCmd::ToggleSine => {
-                if let Some(state) = running_state.as_mut() {
-                    if state.sine_track.is_published() {
-                        state.sine_track.unpublish().await.unwrap();
-                    } else {
-                        state.sine_track.publish().await.unwrap();
-                    }
-                }
+            AsyncCmd::TogglePublish { source } => {
+                let Some(state) = running_state.as_mut() else {
+                    continue;
+                };
+                let report = |state| {
+                    let _ = inner.ui_tx.send(UiCmd::PublishState { source, state });
+                };
+                report(PublishState::Pending);
+                let published = state.toggle_publish(source, &inner.ui_tx).await;
+                report(if published {
+                    PublishState::Published
+                } else {
+                    PublishState::Unpublished
+                });
             }
             AsyncCmd::ToggleMic => {
                 if let Some(state) = running_state.as_mut() {
@@ -285,29 +432,6 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                         }
                     } else {
                         log::error!("cannot toggle microphone: platform audio unavailable");
-                    }
-                }
-            }
-            AsyncCmd::ToggleDataTrack => {
-                if let Some(state) = running_state.as_mut() {
-                    if let Some(track) = state.data_track.take() {
-                        track.unpublish();
-                        let _ = inner.ui_tx.send(UiCmd::DataTrackUnpublished);
-                    } else {
-                        match state
-                            .room
-                            .local_participant()
-                            .publish_data_track("slider")
-                            .await
-                        {
-                            Ok(track) => {
-                                let _ = inner.ui_tx.send(UiCmd::DataTrackPublished {
-                                    track: track.clone(),
-                                });
-                                state.data_track = Some(track);
-                            }
-                            Err(err) => log::error!("failed to publish data track: {err}"),
-                        }
                     }
                 }
             }
@@ -424,10 +548,40 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
     }
 }
 
+/// One [`CaptureTrack`] per source, each reporting to the UI when its pump
+/// exits so the menu never shows a dead track as published.
+fn capture_tracks(
+    room: &Arc<Room>,
+    ui_tx: &mpsc::UnboundedSender<UiCmd>,
+) -> HashMap<CaptureSource, CaptureTrack> {
+    CaptureSource::ALL
+        .map(|source| {
+            let ui_tx = ui_tx.clone();
+            let on_unpublished: OnUnpublished = Arc::new(move || {
+                let _ = ui_tx.send(UiCmd::PublishState {
+                    source: LocalSource::Capture(source),
+                    state: PublishState::Unpublished,
+                });
+            });
+            (
+                source,
+                CaptureTrack::new(room.clone(), source, on_unpublished),
+            )
+        })
+        .into()
+}
+
 /// Task basically used to forward room events to the UI.
 /// It will automatically close when the room is disconnected.
-async fn room_task(inner: Arc<ServiceInner>, mut events: mpsc::UnboundedReceiver<RoomEvent>) {
+async fn room_task(
+    inner: Arc<ServiceInner>,
+    mut events: mpsc::UnboundedReceiver<RoomEvent>,
+    disconnected_tx: mpsc::UnboundedSender<()>,
+) {
     while let Some(event) = events.recv().await {
+        if matches!(event, RoomEvent::Disconnected { .. }) {
+            let _ = disconnected_tx.send(());
+        }
         let _ = inner.ui_tx.send(UiCmd::RoomEvent { event });
     }
 }
