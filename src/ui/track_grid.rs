@@ -81,7 +81,7 @@ impl TrackGrid {
             // Save the new state
             if self.curr_state != self.prev_state {
                 self.curr_state.clone().store(ui.ctx(), id);
-                ui.ctx().request_repaint();
+                ui.ctx().request_discard("TrackGrid: track count changed");
             }
 
             res
