@@ -85,7 +85,7 @@ impl HandlersState {
     /// The "Handlers" collapsible: a header with an "add" button that opens the
     /// register popup, and a body listing one [`RpcHandlerCard`] per handler.
     fn show(&mut self, ui: &mut egui::Ui, ctx: &RoomContext, room: &Room) {
-        let header_id = ctx.id.with("rpc_handlers_section");
+        let header_id = ui.make_persistent_id("rpc_handlers_section");
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
                 ui.label(format!("Handlers ({})", self.entries.len()));
@@ -155,7 +155,6 @@ impl HandlersState {
             ui.push_id(&method, |ui| {
                 ui.add(RpcHandlerCard {
                     entry: &entry,
-                    id: ctx.id,
                     to_remove: &mut to_remove,
                 });
             });
@@ -214,7 +213,7 @@ impl egui::Widget for RpcPanel<'_> {
         let RpcPanel { state, ctx } = self;
         ui.scope(|ui| {
             egui::ScrollArea::vertical()
-                .id_salt(ctx.id.with("rpc_scroll"))
+                .id_salt("rpc_scroll")
                 .show(ui, |ui| {
                     let Some(room) = ctx.room else {
                         ui.label("Not connected");

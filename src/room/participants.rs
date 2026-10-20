@@ -19,7 +19,7 @@ impl egui::Widget for ParticipantsPanel<'_> {
             };
 
             egui::ScrollArea::vertical()
-                .id_salt(ctx.id.with("participants_scroll"))
+                .id_salt("participants_scroll")
                 .show(ui, |ui| {
                     // Local participant first, so "you" are always visible and
                     // stable at the top.
@@ -67,7 +67,7 @@ impl egui::Widget for ParticipantCard<'_> {
             identity.as_str().to_owned()
         };
         egui::CollapsingHeader::new(title)
-            .id_salt(ctx.id.with(("participant", is_local, identity.as_str())))
+            .id_salt(("participant", is_local, identity.as_str()))
             .default_open(true)
             .show(ui, |ui| {
                 ui.weak(format!(

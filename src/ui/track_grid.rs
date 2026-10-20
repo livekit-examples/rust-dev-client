@@ -22,7 +22,7 @@ pub const DEFAULT_MAX_COLUMNS: u32 = 4;
 pub const DEFAULT_SPACING: f32 = 8.0;
 
 pub struct TrackGrid {
-    id: egui::Id,
+    id_salt: egui::IdSalt,
 
     // Current frame
     available_rect: egui::Rect,
@@ -37,9 +37,9 @@ pub struct TrackGrid {
 }
 
 impl TrackGrid {
-    pub fn new(id: egui::Id) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt) -> Self {
         Self {
-            id,
+            id_salt: egui::IdSalt::new(id_salt),
             available_rect: egui::Rect::NAN,
             prev_state: State::default(),
             curr_state: State::default(),
@@ -57,14 +57,15 @@ impl TrackGrid {
     ) -> egui::InnerResponse<R> {
         // TODO(theomonnom): Should I care about the current egui layout?
 
-        let prev_state = State::load(ui.ctx(), self.id);
+        let id = ui.scope_id().with_salt(self.id_salt);
+        let prev_state = State::load(ui.ctx(), id);
         let is_first_frame = prev_state.is_none();
 
         self.prev_state = prev_state.unwrap_or_default();
         self.available_rect = ui.available_rect_before_wrap();
 
         ui.ctx()
-            .check_for_id_clash(self.id, self.available_rect, "TrackGrid");
+            .check_for_id_clash(id, self.available_rect, "TrackGrid");
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(self.available_rect), |ui| {
             if is_first_frame {
@@ -79,7 +80,7 @@ impl TrackGrid {
 
             // Save the new state
             if self.curr_state != self.prev_state {
-                self.curr_state.clone().store(ui.ctx(), self.id);
+                self.curr_state.clone().store(ui.ctx(), id);
                 ui.ctx().request_repaint();
             }
 

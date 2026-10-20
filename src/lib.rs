@@ -69,7 +69,6 @@ impl AppRoot {
 
         let title = format!("{} - {}", APP_NAME, request.auth.target_label());
         let window = RoomWindow::new(
-            id,
             self.async_runtime.handle().clone(),
             self.render_state.clone(),
             request,

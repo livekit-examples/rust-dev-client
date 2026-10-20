@@ -16,7 +16,6 @@ use std::collections::HashMap;
 /// creation with the settings handed over by the connect screen; there is no
 /// connect form here.
 pub struct RoomWindow {
-    window_id: u64,
     runtime: tokio::runtime::Handle,
     request: ConnectSettings,
     video_renderers: HashMap<(ParticipantIdentity, TrackSid), VideoRenderer>,
@@ -32,14 +31,12 @@ pub struct RoomWindow {
 
 impl RoomWindow {
     pub fn new(
-        window_id: u64,
         runtime: tokio::runtime::Handle,
         render_state: egui_wgpu::RenderState,
         request: ConnectSettings,
     ) -> Self {
         let mut window = Self {
             service: LkService::new(&runtime),
-            window_id,
             runtime,
             request,
             video_renderers: HashMap::new(),
@@ -188,9 +185,6 @@ impl RoomWindow {
         }
     }
 
-    /// Panel ids are salted via `RoomCtx::id` (derived from `window_id`): all
-    /// viewports share a single `egui::Context`, so unsalted ids would share
-    /// state across windows.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if let Some(event) = self.service.try_recv() {
             self.event(event);
@@ -205,10 +199,9 @@ impl RoomWindow {
             let ctx = RoomContext {
                 service: &self.service,
                 room: room.as_deref(),
-                id: egui::Id::unique(self.window_id),
             };
 
-            egui::Panel::top(ctx.id.with("top_panel"))
+            egui::Panel::top("top_panel")
                 .frame(
                     egui::Frame::central_panel(ui.style())
                         .inner_margin(egui::Margin::symmetric(10, 6)),
@@ -220,7 +213,7 @@ impl RoomWindow {
                     });
                 });
 
-            egui::Panel::bottom(ctx.id.with("status_bar"))
+            egui::Panel::bottom("status_bar")
                 .frame(
                     egui::Frame::central_panel(ui.style())
                         .inner_margin(egui::Margin::symmetric(10, 6)),
@@ -234,7 +227,7 @@ impl RoomWindow {
                     });
                 });
 
-            egui::Panel::right(ctx.id.with("right_panel"))
+            egui::Panel::right("right_panel")
                 .frame(egui::Frame::central_panel(ui.style()).outer_margin(0.))
                 .resizable(true)
                 .size_range(20.0..=360.0)

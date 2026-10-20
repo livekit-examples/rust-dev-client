@@ -26,13 +26,13 @@ impl egui::Widget for TrackGridView<'_> {
 
         ui.scope(|ui| {
             egui::ScrollArea::vertical()
-                .id_salt(ctx.id.with("central_scroll"))
+                .id_salt("central_scroll")
                 .show(ui, |ui| {
                     // `TrackGrid::show` hands the closure a `TrackGridContext`, not
                     // an `egui::Ui`, so capture the egui context here (cheap Arc
                     // clone) to resolve the placeholder texture lazily below.
                     let egui_ctx = ui.ctx().clone();
-                    TrackGrid::new(ctx.id.with("default_grid"))
+                    TrackGrid::new("default_grid")
                         .max_columns(6)
                         .show(ui, |ui| {
                             if let Some(room) = ctx.room {
