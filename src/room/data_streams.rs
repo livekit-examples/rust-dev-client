@@ -289,15 +289,17 @@ impl DataStreamsUiState {
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
                 ui.label(format!("Subscriptions ({})", self.subscriptions.len()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let add = ui.button("➕").on_hover_text("Add subscription");
-                    // The popup body only renders while open, so a click on the
-                    // button here means it was just opened — focus the field then.
-                    let just_opened = add.clicked();
-                    egui::Popup::from_toggle_button_response(&add)
-                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| self.add_form(ui, just_opened));
-                });
+                egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                    .id_salt("ds_subscriptions_add")
+                    .show(ui, |ui| {
+                        let add = ui.button("➕").on_hover_text("Add subscription");
+                        // The popup body only renders while open, so a click on the
+                        // button here means it was just opened — focus the field then.
+                        let just_opened = add.clicked();
+                        egui::Popup::from_toggle_button_response(&add)
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| self.add_form(ui, just_opened));
+                    });
             });
         // The add is applied inside the popup, before the cards render, so both of
         // egui's layout passes see the same subscription set on the frame one is
@@ -372,11 +374,13 @@ impl DataStreamsUiState {
                 ui.horizontal(|ui| {
                     ui.monospace(RichText::new(&guard.topic).strong());
                     ui.weak(RichText::new(format!("[{}]", guard.kind.label())).small());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Remove").clicked() {
-                            to_remove = Some(key.clone());
-                        }
-                    });
+                    egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                        .id_salt(("ds_remove", guard.topic.as_str(), guard.kind.label()))
+                        .show(ui, |ui| {
+                            if ui.button("Remove").clicked() {
+                                to_remove = Some(key.clone());
+                            }
+                        });
                 });
 
                 ui.label(format!("Received ({})", guard.count));

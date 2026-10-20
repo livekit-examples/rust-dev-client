@@ -89,15 +89,17 @@ impl HandlersState {
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
                 ui.label(format!("Handlers ({})", self.entries.len()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let add = ui.button("➕").on_hover_text("Register handler");
-                    // The popup body only renders while open, so a click on the
-                    // button here means it was just opened — focus the field then.
-                    let just_opened = add.clicked();
-                    egui::Popup::from_toggle_button_response(&add)
-                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| self.register_form(ui, ctx, room, just_opened));
-                });
+                egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                    .id_salt("rpc_handlers_add")
+                    .show(ui, |ui| {
+                        let add = ui.button("➕").on_hover_text("Register handler");
+                        // The popup body only renders while open, so a click on the
+                        // button here means it was just opened — focus the field then.
+                        let just_opened = add.clicked();
+                        egui::Popup::from_toggle_button_response(&add)
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| self.register_form(ui, ctx, room, just_opened));
+                    });
             });
         // The registration is applied inside the popup, before the cards render,
         // so both of egui's layout passes see the same handler set on the frame a
