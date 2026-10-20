@@ -185,7 +185,7 @@ impl DataStreamsUiState {
                 .as_ref()
                 .map(|i| i.as_str().to_string())
                 .unwrap_or_else(|| "Everyone (broadcast)".to_string());
-            egui::ComboBox::from_id_salt(ctx.id.with("ds_dest_combo"))
+            egui::ComboBox::from_id_salt("ds_dest_combo")
                 .selected_text(combo_label)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.send_destination, None, "Everyone (broadcast)");
@@ -214,7 +214,7 @@ impl DataStreamsUiState {
         });
         let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
         egui::ScrollArea::vertical()
-            .id_salt(ctx.id.with("ds_send_content_scroll"))
+            .id_salt("ds_send_content_scroll")
             .max_height(max_h)
             .show(ui, |ui| {
                 ui.add(
@@ -284,26 +284,34 @@ impl DataStreamsUiState {
     /// The "Subscriptions" collapsible: a header with an "add" button that opens
     /// the add popup, and a body listing one card per subscription. Mirrors
     /// [`crate::room::rpc`]'s `HandlersState::show`.
-    fn show_subscriptions(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
-        let header_id = ctx.id.with("ds_subscriptions_section");
+    fn show_subscriptions(&mut self, ui: &mut egui::Ui) {
+        let header_id = ui.make_persistent_id("ds_subscriptions_section");
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
-                ui.label(format!("Subscriptions ({})", self.subscriptions.len()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let add = ui.button("➕").on_hover_text("Add subscription");
-                    // The popup body only renders while open, so a click on the
-                    // button here means it was just opened — focus the field then.
-                    let just_opened = add.clicked();
-                    egui::Popup::from_toggle_button_response(&add)
-                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| self.add_form(ui, just_opened));
-                });
+                ui.label(egui::WidgetText::concat(
+                    ui,
+                    [
+                        RichText::new("Subscriptions"),
+                        RichText::new(format!(" ({})", self.subscriptions.len())).weak(),
+                    ],
+                ));
+                egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                    .id_salt("ds_subscriptions_add")
+                    .show(ui, |ui| {
+                        let add = ui.button("➕").on_hover_text("Add subscription");
+                        // The popup body only renders while open, so a click on the
+                        // button here means it was just opened — focus the field then.
+                        let just_opened = add.clicked();
+                        egui::Popup::from_toggle_button_response(&add)
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| self.add_form(ui, just_opened));
+                    });
             });
         // The add is applied inside the popup, before the cards render, so both of
         // egui's layout passes see the same subscription set on the frame one is
         // added (deferring it to after `body` would render N cards in pass 1 and
         // N+1 in pass 2, tripping the id-stability check).
-        header.body(|ui| self.subscription_cards(ui, ctx));
+        header.body(|ui| self.subscription_cards(ui));
     }
 
     /// The add popup's contents: a topic field, the Text/Bytes kind, and an Add
@@ -360,7 +368,7 @@ impl DataStreamsUiState {
         self.sub_topic.clear();
     }
 
-    fn subscription_cards(&mut self, ui: &mut egui::Ui, ctx: &RoomContext) {
+    fn subscription_cards(&mut self, ui: &mut egui::Ui) {
         let keys: Vec<(String, StreamKind)> = self.subscriptions.keys().cloned().collect();
         let mut to_remove: Option<(String, StreamKind)> = None;
 
@@ -372,11 +380,13 @@ impl DataStreamsUiState {
                 ui.horizontal(|ui| {
                     ui.monospace(RichText::new(&guard.topic).strong());
                     ui.weak(RichText::new(format!("[{}]", guard.kind.label())).small());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Remove").clicked() {
-                            to_remove = Some(key.clone());
-                        }
-                    });
+                    egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                        .id_salt(("ds_remove", guard.topic.as_str(), guard.kind.label()))
+                        .show(ui, |ui| {
+                            if ui.button("Remove").clicked() {
+                                to_remove = Some(key.clone());
+                            }
+                        });
                 });
 
                 ui.label(format!("Received ({})", guard.count));
@@ -385,11 +395,7 @@ impl DataStreamsUiState {
                 } else {
                     let max_h = ui.text_style_height(&egui::TextStyle::Body) * 10.0 + 8.0;
                     egui::ScrollArea::vertical()
-                        .id_salt(ctx.id.with((
-                            "ds_recv_scroll",
-                            guard.topic.as_str(),
-                            guard.kind.label(),
-                        )))
+                        .id_salt(("ds_recv_scroll", guard.topic.as_str(), guard.kind.label()))
                         .max_height(max_h)
                         .show(ui, |ui| {
                             for r in guard.received.iter() {
@@ -427,7 +433,7 @@ impl egui::Widget for DataStreamsPanel<'_> {
         let DataStreamsPanel { state, ctx } = self;
         ui.scope(|ui| {
             egui::ScrollArea::vertical()
-                .id_salt(ctx.id.with("data_streams_scroll"))
+                .id_salt("data_streams_scroll")
                 .show(ui, |ui| {
                     let Some(room) = ctx.room else {
                         ui.label("Not connected");
@@ -436,7 +442,7 @@ impl egui::Widget for DataStreamsPanel<'_> {
                     egui::CollapsingHeader::new("Send Data Stream")
                         .default_open(true)
                         .show(ui, |ui| state.show_send(ui, ctx, room));
-                    state.show_subscriptions(ui, ctx);
+                    state.show_subscriptions(ui);
                 });
         })
         .response

@@ -62,42 +62,44 @@ impl egui::Widget for StatusBar<'_> {
                 ui.label("Disconnected");
             }
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let size = egui::vec2(BUTTON_WIDTH, 0.0);
-                if connecting {
-                    ui.add_enabled(false, egui::Button::new("Connecting...").min_size(size));
-                } else if room.is_some() {
-                    if ui
-                        .add(egui::Button::new("Disconnect").min_size(size))
+            egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                .id_salt("status_actions")
+                .show(ui, |ui| {
+                    let size = egui::vec2(BUTTON_WIDTH, 0.0);
+                    if connecting {
+                        ui.add_enabled(false, egui::Button::new("Connecting...").min_size(size));
+                    } else if room.is_some() {
+                        let palette = Palette::for_theme(ui.theme());
+                        let mic_label = if mic_active {
+                            egui::RichText::new("Microphone").color(palette.bg_1)
+                        } else {
+                            egui::RichText::new("Microphone")
+                        };
+                        let mut mic_button = egui::Button::new(mic_label).min_size(size);
+                        if mic_active {
+                            mic_button = mic_button.fill(palette.fg_success);
+                        }
+                        let mic_tooltip = if mic_active {
+                            "Microphone is publishing — click to stop (platform audio / ADM)"
+                        } else {
+                            "Publish microphone audio via platform audio (ADM)"
+                        };
+                        if ui.add(mic_button).on_hover_text(mic_tooltip).clicked() {
+                            let _ = ctx.service.send(AsyncCmd::ToggleMic);
+                        }
+                        if ui
+                            .add(egui::Button::new("Disconnect").min_size(size))
+                            .clicked()
+                        {
+                            actions.disconnect = true;
+                        }
+                    } else if ui
+                        .add(egui::Button::new("Reconnect").min_size(size))
                         .clicked()
                     {
-                        actions.disconnect = true;
+                        actions.reconnect = true;
                     }
-                    let palette = Palette::for_theme(ui.theme());
-                    let mic_label = if mic_active {
-                        egui::RichText::new("Microphone").color(palette.bg_1)
-                    } else {
-                        egui::RichText::new("Microphone")
-                    };
-                    let mut mic_button = egui::Button::new(mic_label).min_size(size);
-                    if mic_active {
-                        mic_button = mic_button.fill(palette.fg_success);
-                    }
-                    let mic_tooltip = if mic_active {
-                        "Microphone is publishing — click to stop (platform audio / ADM)"
-                    } else {
-                        "Publish microphone audio via platform audio (ADM)"
-                    };
-                    if ui.add(mic_button).on_hover_text(mic_tooltip).clicked() {
-                        let _ = ctx.service.send(AsyncCmd::ToggleMic);
-                    }
-                } else if ui
-                    .add(egui::Button::new("Reconnect").min_size(size))
-                    .clicked()
-                {
-                    actions.reconnect = true;
-                }
-            });
+                });
         })
         .response
     }

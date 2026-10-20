@@ -40,7 +40,7 @@ impl egui::Widget for RpcSendForm<'_> {
                     .unwrap_or_else(|| "Select Callee".to_string());
                 // Disable the combo when there's no one to call.
                 ui.add_enabled_ui(has_participants, |ui| {
-                    egui::ComboBox::from_id_salt(ctx.id.with("rpc_dest_combo"))
+                    egui::ComboBox::from_id_salt("rpc_dest_combo")
                         .selected_text(combo_label)
                         .show_ui(ui, |ui| {
                             for ident in &idents {
@@ -71,7 +71,7 @@ impl egui::Widget for RpcSendForm<'_> {
             });
             let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
             egui::ScrollArea::vertical()
-                .id_salt(ctx.id.with("rpc_send_payload_scroll"))
+                .id_salt("rpc_send_payload_scroll")
                 .max_height(max_h)
                 .show(ui, |ui| {
                     ui.add(

@@ -276,9 +276,11 @@ impl ConnectView {
                 let version_string = format!("SDK Version: {}", livekit::SDK_VERSION);
                 let text = egui::RichText::new(version_string).text_style(egui::TextStyle::Small);
                 ui.label(text);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::warn_if_debug_build(ui);
-                });
+                egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                    .id_salt("debug_warning")
+                    .show(ui, |ui| {
+                        egui::warn_if_debug_build(ui);
+                    });
             });
         });
 
@@ -326,14 +328,16 @@ impl egui::Widget for ConnectForm<'_> {
                     AuthMethod::DevelopmentTokenServer,
                     "TokenSource",
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let toggle = ui
-                        .add(egui::Button::selectable(view.show_secrets, "👁"))
-                        .on_hover_text("Show/hide secrets");
-                    if toggle.clicked() {
-                        view.show_secrets = !view.show_secrets;
-                    }
-                });
+                egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                    .id_salt("secrets_toggle")
+                    .show(ui, |ui| {
+                        let toggle = ui
+                            .add(egui::Button::selectable(view.show_secrets, "👁"))
+                            .on_hover_text("Show/hide secrets");
+                        if toggle.clicked() {
+                            view.show_secrets = !view.show_secrets;
+                        }
+                    });
             });
             ui.add_space(8.0);
 

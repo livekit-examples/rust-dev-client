@@ -8,34 +8,32 @@ use std::sync::Arc;
 /// Widget: one registered RPC handler as a collapsible section titled by its
 /// method — its reply editor and invocation log. Clicking Unregister raises the
 /// method name in `to_remove`; the caller performs the actual unregister so this
-/// widget needs no service/room.
+/// widget needs no service/room. Ids are scoped to the parent `Ui`, so give each
+/// card its own scope (e.g. `ui.push_id(method, ..)`).
 pub struct RpcHandlerCard<'a> {
     pub entry: &'a Arc<Mutex<HandlerEntry>>,
-    pub id: egui::Id,
     pub to_remove: &'a mut Option<String>,
 }
 
 impl egui::Widget for RpcHandlerCard<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let RpcHandlerCard {
-            entry,
-            id,
-            to_remove,
-        } = self;
+        let RpcHandlerCard { entry, to_remove } = self;
 
         let mut guard = entry.lock();
-        let header_id = id.with(("rpc_handler", guard.method.as_str()));
+        let header_id = ui.make_persistent_id("rpc_handler");
         let title = guard.method.clone();
 
         let state = CollapsingState::load_with_default_open(ui.ctx(), header_id, true);
         let header = state.show_header(ui, |ui| {
             ui.label(title);
             // Float the unregister control to the right of the header.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("➖").on_hover_text("Unregister").clicked() {
-                    *to_remove = Some(guard.method.clone());
-                }
-            });
+            egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+                .id_salt("unregister")
+                .show(ui, |ui| {
+                    if ui.button("➖").on_hover_text("Unregister").clicked() {
+                        *to_remove = Some(guard.method.clone());
+                    }
+                });
         });
 
         let (_, header_response, _) = header.body(|ui| {
@@ -50,7 +48,7 @@ impl egui::Widget for RpcHandlerCard<'_> {
             });
             let max_h = ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 8.0;
             egui::ScrollArea::vertical()
-                .id_salt(id.with(("rpc_handler_reply_scroll", guard.method.as_str())))
+                .id_salt("rpc_handler_reply_scroll")
                 .max_height(max_h)
                 .show(ui, |ui| {
                     ui.add(
