@@ -37,9 +37,9 @@ pub struct TrackGrid {
 }
 
 impl TrackGrid {
-    pub fn new(id_source: impl std::hash::Hash + std::fmt::Debug) -> Self {
+    pub fn new(id: egui::Id) -> Self {
         Self {
-            id: egui::Id::new(id_source),
+            id,
             available_rect: egui::Rect::NAN,
             prev_state: State::default(),
             curr_state: State::default(),

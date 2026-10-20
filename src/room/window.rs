@@ -205,7 +205,7 @@ impl RoomWindow {
             let ctx = RoomContext {
                 service: &self.service,
                 room: room.as_deref(),
-                id: egui::Id::new(self.window_id),
+                id: egui::Id::unique(self.window_id),
             };
 
             egui::Panel::top(ctx.id.with("top_panel"))

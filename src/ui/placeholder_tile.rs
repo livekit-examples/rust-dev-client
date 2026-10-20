@@ -2,7 +2,7 @@
 /// via egui temp-data (all viewports share one `Context`). Returns a handle whose
 /// `.id()` feeds [`PlaceholderTile`].
 pub fn placeholder_texture(ctx: &egui::Context) -> egui::TextureHandle {
-    let id = egui::Id::new("placeholder_tile_texture");
+    let id = egui::Id::unique("placeholder_tile_texture");
     if let Some(handle) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return handle;
     }
