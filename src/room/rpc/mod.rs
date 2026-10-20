@@ -88,7 +88,13 @@ impl HandlersState {
         let header_id = ui.make_persistent_id("rpc_handlers_section");
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
-                ui.label(format!("Handlers ({})", self.entries.len()));
+                ui.label(egui::WidgetText::concat(
+                    ui,
+                    [
+                        egui::RichText::new("Handlers"),
+                        egui::RichText::new(format!(" ({})", self.entries.len())).weak(),
+                    ],
+                ));
                 egui::Aligned::new(egui::Align2::RIGHT_CENTER)
                     .id_salt("rpc_handlers_add")
                     .show(ui, |ui| {

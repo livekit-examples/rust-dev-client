@@ -288,7 +288,13 @@ impl DataStreamsUiState {
         let header_id = ui.make_persistent_id("ds_subscriptions_section");
         let header = CollapsingState::load_with_default_open(ui.ctx(), header_id, true)
             .show_header(ui, |ui| {
-                ui.label(format!("Subscriptions ({})", self.subscriptions.len()));
+                ui.label(egui::WidgetText::concat(
+                    ui,
+                    [
+                        RichText::new("Subscriptions"),
+                        RichText::new(format!(" ({})", self.subscriptions.len())).weak(),
+                    ],
+                ));
                 egui::Aligned::new(egui::Align2::RIGHT_CENTER)
                     .id_salt("ds_subscriptions_add")
                     .show(ui, |ui| {
