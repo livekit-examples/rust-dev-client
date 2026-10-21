@@ -326,6 +326,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 if let Some(mut state) = running_state.take_if(|state| {
                     state.room.connection_state() == ConnectionState::Disconnected
                 }) {
+                    *inner.room.lock() = None;
                     state.unpublish_all(&inner.ui_tx).await;
                 }
                 continue;
