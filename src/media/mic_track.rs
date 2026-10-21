@@ -14,8 +14,7 @@ pub struct MicTrack {
 }
 
 impl MicTrack {
-    /// Track name used when publishing; also how the UI detects the mic is live.
-    pub const TRACK_NAME: &str = "microphone";
+    const TRACK_NAME: &str = "microphone";
 
     pub fn new(room: Arc<Room>) -> Self {
         Self { room, track: None }

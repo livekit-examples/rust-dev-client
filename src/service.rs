@@ -31,7 +31,6 @@ pub enum AsyncCmd {
     TogglePublish {
         source: LocalSource,
     },
-    ToggleMic,
     SubscribeTrack {
         publication: RemoteTrackPublication,
     },
@@ -70,15 +69,17 @@ pub enum DataStreamPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LocalSource {
     Capture(CaptureSource),
+    Mic,
     Sine,
     DataTrack,
 }
 
 impl LocalSource {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Capture(CaptureSource::Gradient),
         Self::Capture(CaptureSource::Logo),
         Self::Capture(CaptureSource::Clock),
+        Self::Mic,
         Self::Sine,
         Self::DataTrack,
     ];
@@ -86,6 +87,7 @@ impl LocalSource {
     pub fn label(self) -> &'static str {
         match self {
             Self::Capture(source) => source.label(),
+            Self::Mic => "Audio: Microphone",
             Self::Sine => "Audio: Sine Wave",
             Self::DataTrack => "Data Track: Slider",
         }
@@ -94,6 +96,7 @@ impl LocalSource {
     pub fn description(self) -> &'static str {
         match self {
             Self::Capture(source) => source.description(),
+            Self::Mic => "Microphone audio via platform audio (ADM)",
             Self::Sine => "Synthetic 440 Hz sine wave tone",
             Self::DataTrack => "Integer from 0 to 512 set with a slider, sent as text",
         }
@@ -252,6 +255,22 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                         log::error!("failed to publish {capture:?} capture track: {err}");
                     }
                     track.is_published()
+                }
+                LocalSource::Mic => {
+                    // Cloned so `mic_track` can be borrowed mutably alongside it.
+                    let Some(platform_audio) = self.platform_audio.clone() else {
+                        log::error!("cannot toggle microphone: platform audio unavailable");
+                        return false;
+                    };
+                    let result = if self.mic_track.is_published() {
+                        self.mic_track.unpublish(&platform_audio).await
+                    } else {
+                        self.mic_track.publish(&platform_audio).await
+                    };
+                    if let Err(err) = result {
+                        log::error!("failed to toggle microphone: {err}");
+                    }
+                    self.mic_track.is_published()
                 }
                 LocalSource::Sine => {
                     let result = if self.sine_track.is_published() {
@@ -416,24 +435,6 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 } else {
                     PublishState::Unpublished
                 });
-            }
-            AsyncCmd::ToggleMic => {
-                if let Some(state) = running_state.as_mut() {
-                    // Clone the ref-counted handle to sidestep a disjoint borrow of
-                    // `state` (mic_track is borrowed mutably below).
-                    if let Some(platform_audio) = state.platform_audio.clone() {
-                        let result = if state.mic_track.is_published() {
-                            state.mic_track.unpublish(&platform_audio).await
-                        } else {
-                            state.mic_track.publish(&platform_audio).await
-                        };
-                        if let Err(err) = result {
-                            log::error!("failed to toggle microphone: {err}");
-                        }
-                    } else {
-                        log::error!("cannot toggle microphone: platform audio unavailable");
-                    }
-                }
             }
             AsyncCmd::SubscribeTrack { publication } => {
                 publication.set_subscribed(true);
