@@ -2,6 +2,7 @@
 //! service / `RoomCtx` dependency. The room feature in `crate::room` depends on
 //! this layer, never the reverse.
 
+pub mod chat_message;
 pub mod data_chart;
 pub mod labeled_field;
 pub mod placeholder_tile;

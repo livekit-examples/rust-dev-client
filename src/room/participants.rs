@@ -1,19 +1,44 @@
-use crate::room::RoomContext;
-use crate::service::AsyncCmd;
 use crate::ui::status_badge::StatusBadge;
 use livekit::{e2ee::EncryptionType, prelude::*, track::VideoQuality};
+
+/// A change to a remote track subscription, requested from the participants list.
+#[derive(Debug)]
+pub enum TrackCmd {
+    Subscribe(RemoteTrackPublication),
+    Unsubscribe(RemoteTrackPublication),
+    SetVideoQuality(RemoteTrackPublication, VideoQuality),
+}
+
+impl TrackCmd {
+    pub fn apply(self) {
+        match self {
+            TrackCmd::Subscribe(publication) => publication.set_subscribed(true),
+            TrackCmd::Unsubscribe(publication) => publication.set_subscribed(false),
+            TrackCmd::SetVideoQuality(publication, quality) => {
+                publication.set_video_quality(quality)
+            }
+        }
+    }
+}
+
+/// Where the participants list sends its [`TrackCmd`]s, so it works with any
+/// service that owns a room.
+pub trait TrackCommands {
+    fn track_cmd(&self, cmd: TrackCmd);
+}
 
 /// Scrollable list of the local and remote participants and their track
 /// publications.
 pub struct ParticipantsPanel<'a> {
-    pub ctx: &'a RoomContext<'a>,
+    pub room: Option<&'a Room>,
+    pub commands: &'a dyn TrackCommands,
 }
 
 impl egui::Widget for ParticipantsPanel<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let ctx = self.ctx;
+        let ParticipantsPanel { room, commands } = self;
         ui.scope(|ui| {
-            let Some(room) = ctx.room else {
+            let Some(room) = room else {
                 ui.label("Not connected");
                 return;
             };
@@ -24,7 +49,7 @@ impl egui::Widget for ParticipantsPanel<'_> {
                     // Local participant first, so "you" are always visible and
                     // stable at the top.
                     ui.add(ParticipantCard {
-                        ctx,
+                        commands,
                         participant: Participant::Local(room.local_participant()),
                     });
 
@@ -39,7 +64,7 @@ impl egui::Widget for ParticipantsPanel<'_> {
                     for psid in sorted_participants {
                         let participant = participants.get(&psid).unwrap().clone();
                         ui.add(ParticipantCard {
-                            ctx,
+                            commands,
                             participant: Participant::Remote(participant),
                         });
                     }
@@ -52,13 +77,16 @@ impl egui::Widget for ParticipantsPanel<'_> {
 /// One participant: a collapsible section titled by its identity, with a row per
 /// track publication in the body.
 struct ParticipantCard<'a> {
-    ctx: &'a RoomContext<'a>,
+    commands: &'a dyn TrackCommands,
     participant: Participant,
 }
 
 impl egui::Widget for ParticipantCard<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let ParticipantCard { ctx, participant } = self;
+        let ParticipantCard {
+            commands,
+            participant,
+        } = self;
         let is_local = matches!(participant, Participant::Local(_));
         let identity = participant.identity().0;
         let title = if is_local {
@@ -88,7 +116,10 @@ impl egui::Widget for ParticipantCard<'_> {
 
                 for tsid in sorted_tracks {
                     let publication = tracks.get(&tsid).unwrap().clone();
-                    ui.add(TrackPublicationRow { ctx, publication });
+                    ui.add(TrackPublicationRow {
+                        commands,
+                        publication,
+                    });
                 }
             })
             .header_response
@@ -99,13 +130,16 @@ impl egui::Widget for ParticipantCard<'_> {
 /// The quality menu and subscribe/unsubscribe controls apply only to remote
 /// tracks, so they are hidden for the local participant's own publications.
 struct TrackPublicationRow<'a> {
-    ctx: &'a RoomContext<'a>,
+    commands: &'a dyn TrackCommands,
     publication: TrackPublication,
 }
 
 impl egui::Widget for TrackPublicationRow<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let TrackPublicationRow { ctx, publication } = self;
+        let TrackPublicationRow {
+            commands,
+            publication,
+        } = self;
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label("Encrypted - ");
@@ -135,20 +169,20 @@ impl egui::Widget for TrackPublicationRow<'_> {
                 {
                     ui.menu_button("Set Quality", |ui| {
                         if ui.button("Low").clicked() {
-                            let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication: remote.clone(),
-                                quality: VideoQuality::Low,
-                            });
+                            commands.track_cmd(TrackCmd::SetVideoQuality(
+                                remote.clone(),
+                                VideoQuality::Low,
+                            ));
                         } else if ui.button("Medium").clicked() {
-                            let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication: remote.clone(),
-                                quality: VideoQuality::Medium,
-                            });
+                            commands.track_cmd(TrackCmd::SetVideoQuality(
+                                remote.clone(),
+                                VideoQuality::Medium,
+                            ));
                         } else if ui.button("High").clicked() {
-                            let _ = ctx.service.send(AsyncCmd::SetVideoQuality {
-                                publication: remote.clone(),
-                                quality: VideoQuality::High,
-                            });
+                            commands.track_cmd(TrackCmd::SetVideoQuality(
+                                remote.clone(),
+                                VideoQuality::High,
+                            ));
                         }
                     });
                 }
@@ -170,14 +204,10 @@ impl egui::Widget for TrackPublicationRow<'_> {
 
                     if remote.is_subscribed() {
                         if ui.button("Unsubscribe").clicked() {
-                            let _ = ctx.service.send(AsyncCmd::UnsubscribeTrack {
-                                publication: remote.clone(),
-                            });
+                            commands.track_cmd(TrackCmd::Unsubscribe(remote.clone()));
                         }
                     } else if ui.button("Subscribe").clicked() {
-                        let _ = ctx.service.send(AsyncCmd::SubscribeTrack {
-                            publication: remote.clone(),
-                        });
+                        commands.track_cmd(TrackCmd::Subscribe(remote.clone()));
                     }
                 }
             });

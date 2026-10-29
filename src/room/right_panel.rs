@@ -43,7 +43,10 @@ impl egui::Widget for RightPanel<'_> {
 
             match state.tab {
                 RightTab::Participants => {
-                    ui.add(ParticipantsPanel { ctx });
+                    ui.add(ParticipantsPanel {
+                        room: ctx.room,
+                        commands: ctx.service,
+                    });
                 }
                 RightTab::Rpc => {
                     ui.add(RpcPanel {

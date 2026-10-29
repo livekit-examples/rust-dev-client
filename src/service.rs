@@ -2,11 +2,11 @@ use crate::connect::Auth;
 use crate::media::{
     CaptureSource, CaptureTrack, MicTrack, OnUnpublished, SineParameters, SineTrack,
 };
+use crate::room::participants::{TrackCmd, TrackCommands};
 use livekit::{
     SendByteOptions, SendTextOptions, SimulateScenario,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
     prelude::*,
-    track::VideoQuality,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -31,16 +31,7 @@ pub enum AsyncCmd {
     TogglePublish {
         source: LocalSource,
     },
-    SubscribeTrack {
-        publication: RemoteTrackPublication,
-    },
-    UnsubscribeTrack {
-        publication: RemoteTrackPublication,
-    },
-    SetVideoQuality {
-        publication: RemoteTrackPublication,
-        quality: VideoQuality,
-    },
+    Track(TrackCmd),
     E2eeKeyRatchet,
     LogStats,
     RpcSendRequest {
@@ -197,6 +188,12 @@ impl LkService {
     pub async fn close(self) {
         drop(self.cmd_tx);
         let _ = self.handle.await;
+    }
+}
+
+impl TrackCommands for LkService {
+    fn track_cmd(&self, cmd: TrackCmd) {
+        let _ = self.send(AsyncCmd::Track(cmd));
     }
 }
 
@@ -437,18 +434,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     PublishState::Unpublished
                 });
             }
-            AsyncCmd::SubscribeTrack { publication } => {
-                publication.set_subscribed(true);
-            }
-            AsyncCmd::UnsubscribeTrack { publication } => {
-                publication.set_subscribed(false);
-            }
-            AsyncCmd::SetVideoQuality {
-                publication,
-                quality,
-            } => {
-                publication.set_video_quality(quality);
-            }
+            AsyncCmd::Track(cmd) => cmd.apply(),
             AsyncCmd::E2eeKeyRatchet => {
                 if let Some(state) = running_state.as_ref() {
                     let e2ee_manager = state.room.e2ee_manager();
