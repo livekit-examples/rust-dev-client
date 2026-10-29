@@ -1,7 +1,6 @@
 use crate::connect::AgentConnectSettings;
 use crate::media::MicTrack;
 use crate::room::participants::{TrackCmd, TrackCommands};
-use crate::service::PublishState;
 use livekit::{
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
     prelude::*,
@@ -17,7 +16,6 @@ pub enum AgentCmd {
     Start,
     End,
     SendText(String),
-    ToggleMic,
     Track(TrackCmd),
 }
 
@@ -30,7 +28,6 @@ pub enum AgentEvent {
     /// The whole feed, after it was replaced.
     Messages(Vec<Message>),
     SendFailed(String),
-    Mic(PublishState),
     /// The agent's avatar video, or `None` once it is gone.
     Avatar(Option<RemoteVideoTrack>),
 }
@@ -171,7 +168,6 @@ impl AgentActor {
                     self.emit(AgentEvent::SendFailed(err.to_string()));
                 }
             }
-            AgentCmd::ToggleMic => self.toggle_mic().await,
             AgentCmd::Track(cmd) => cmd.apply(),
         }
     }
@@ -206,7 +202,7 @@ impl AgentActor {
         self.emit(AgentEvent::StartResult(Ok(())));
         self.refresh_avatar();
         if self.voice {
-            self.toggle_mic().await;
+            self.publish_mic().await;
         }
     }
 
@@ -230,34 +226,20 @@ impl AgentActor {
     /// Drops what belonged to the connection once the room is gone.
     fn release(&mut self) {
         self.connection = None;
-        self.emit(AgentEvent::Mic(PublishState::Unpublished));
         self.refresh_avatar();
     }
 
-    async fn toggle_mic(&mut self) {
+    async fn publish_mic(&mut self) {
         let Some(connection) = self.connection.as_mut() else {
             return;
         };
         let Some(platform_audio) = connection.platform_audio.as_ref() else {
-            log::error!("cannot toggle microphone: platform audio unavailable");
+            log::error!("cannot publish microphone: platform audio unavailable");
             return;
         };
-        let _ = self.ui_tx.send(AgentEvent::Mic(PublishState::Pending));
-        let mic = &mut connection.mic;
-        let result = if mic.is_published() {
-            mic.unpublish(platform_audio).await
-        } else {
-            mic.publish(platform_audio).await
-        };
-        if let Err(err) = result {
-            log::error!("failed to toggle microphone: {err}");
+        if let Err(err) = connection.mic.publish(platform_audio).await {
+            log::error!("failed to publish microphone: {err}");
         }
-        let state = if mic.is_published() {
-            PublishState::Published
-        } else {
-            PublishState::Unpublished
-        };
-        self.emit(AgentEvent::Mic(state));
     }
 
     fn on_room_event(&mut self, event: RoomEvent) {
