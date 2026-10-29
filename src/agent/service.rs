@@ -1,10 +1,7 @@
-use crate::connect::AgentConnectSettings;
+use crate::connect::{AgentConnectSettings, e2ee_options};
 use crate::media::MicTrack;
 use crate::room::participants::{TrackCmd, TrackCommands};
-use livekit::{
-    e2ee::{E2eeOptions, EncryptionType, key_provider::*},
-    prelude::*,
-};
+use livekit::prelude::*;
 use livekit_session::{
     Message, Session, SessionConnectionState, SessionEvent, SessionOptions, SessionSnapshot,
 };
@@ -25,8 +22,6 @@ pub enum AgentEvent {
     StartResult(Result<(), String>),
     /// A message was added, or a transcript grew.
     Message(Message),
-    /// The whole feed, after it was replaced.
-    Messages(Vec<Message>),
     SendFailed(String),
     /// The agent's avatar video, or `None` once it is gone.
     Avatar(Option<RemoteVideoTrack>),
@@ -44,13 +39,7 @@ pub struct AgentService {
 impl AgentService {
     pub fn new(runtime: &tokio::runtime::Handle, settings: &AgentConnectSettings) -> Self {
         let mut room_options = RoomOptions::default();
-        room_options.encryption = settings.enable_e2ee.then(|| E2eeOptions {
-            encryption_type: EncryptionType::Gcm,
-            key_provider: KeyProvider::with_shared_key(
-                KeyProviderOptions::default(),
-                settings.key.clone().into_bytes(),
-            ),
-        });
+        room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
         let options = SessionOptions {
             agent_connect_timeout: settings.agent_connect_timeout,
             room_options,
@@ -142,7 +131,9 @@ impl AgentActor {
                 Input::Feed(SessionEvent::MessageUpserted(message)) => {
                     self.emit(AgentEvent::Message(message));
                 }
-                Input::Feed(_) => self.emit(AgentEvent::Messages(self.session.messages())),
+                // Only `MessagesRestored`, which follows `Session::restore_messages`;
+                // this client never restores a feed.
+                Input::Feed(_) => {}
                 Input::Room(event) => self.on_room_event(event),
                 Input::StateChanged => {
                     let connection_state = state.borrow_and_update().connection_state;

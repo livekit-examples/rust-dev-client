@@ -1,5 +1,6 @@
 //! The room feature: the per-room window plus its room-context widgets and
-//! state. Depends on the reusable toolkit in [`crate::ui`].
+//! state. Depends on the reusable toolkit in [`crate::ui`]. The [`participants`]
+//! and [`status_bar`] widgets are also used by [`crate::agent`].
 
 pub mod context;
 pub mod data_streams;

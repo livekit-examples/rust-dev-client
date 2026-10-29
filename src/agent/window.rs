@@ -1,10 +1,9 @@
 use crate::{
     agent::service::{AgentCmd, AgentEvent, AgentService},
-    agent::status_bar::AgentStatusBar,
     connect::AgentConnectSettings,
     media::VideoRenderer,
     room::participants::ParticipantsPanel,
-    room::status_bar::StatusBarActions,
+    room::status_bar::{StatusBar, StatusBarActions},
     ui::{
         chat_message::ChatMessage,
         placeholder_tile::{PlaceholderTile, placeholder_texture},
@@ -12,7 +11,7 @@ use crate::{
         video_tile::VideoTile,
     },
 };
-use livekit_session::{AgentState, Message, MessageOrigin};
+use livekit_session::{AgentFailure, AgentState, Message, MessageOrigin};
 use std::collections::BTreeMap;
 
 const AVATAR_HEIGHT: f32 = 200.0;
@@ -25,6 +24,8 @@ pub struct AgentWindow {
     runtime: tokio::runtime::Handle,
     render_state: egui_wgpu::RenderState,
     service: AgentService,
+    /// Reconnecting rejoins the same room, where the agent may not be
+    /// dispatched again.
     reuses_room: bool,
     /// The feed keyed by [`Message::seq`], which a growing transcript keeps.
     messages: BTreeMap<u64, Message>,
@@ -76,12 +77,6 @@ impl AgentWindow {
             AgentEvent::Message(message) => {
                 self.messages.insert(message.seq, message);
             }
-            AgentEvent::Messages(messages) => {
-                self.messages = messages
-                    .into_iter()
-                    .map(|message| (message.seq, message))
-                    .collect();
-            }
             AgentEvent::SendFailed(err) => self.send_failure = Some(err),
             AgentEvent::Avatar(track) => {
                 self.avatar = track.map(|track| {
@@ -105,12 +100,15 @@ impl AgentWindow {
         egui::Panel::bottom("status_bar")
             .frame(bar_frame)
             .show(ui, |ui| {
-                ui.add(AgentStatusBar {
-                    snapshot,
+                ui.add(StatusBar {
                     room: room.as_deref(),
                     connecting: self.connecting,
                     connection_failure: self.connection_failure.as_deref(),
-                    reuses_room: self.reuses_room,
+                    detail: Some(StatusBadge::from(snapshot.agent_state)),
+                    reconnect_hint: self.reuses_room.then_some(
+                        "A pre-generated token rejoins the same room, where the agent may not \
+                         be dispatched again",
+                    ),
                     actions: &mut actions,
                 });
             });
@@ -145,13 +143,11 @@ impl AgentWindow {
                         ui.weak("No messages yet");
                     }
                     for message in self.messages.values() {
-                        ui.push_id((&message.id, message.participant_identity.as_str()), |ui| {
-                            ui.add(
-                                ChatMessage::new(speaker(message), &message.text)
-                                    .local(is_local(message))
-                                    .pending(!message.is_final),
-                            );
-                        });
+                        ui.add(
+                            ChatMessage::new(speaker(message), &message.text)
+                                .local(is_local(message))
+                                .pending(!message.is_final),
+                        );
                         ui.add_space(4.0);
                     }
                 });
@@ -234,6 +230,25 @@ fn has_joined(state: AgentState) -> bool {
         state,
         AgentState::Disconnected | AgentState::Connecting | AgentState::Failed(_)
     )
+}
+
+impl From<AgentState> for StatusBadge {
+    fn from(state: AgentState) -> Self {
+        match state {
+            AgentState::Disconnected => StatusBadge::muted("Agent disconnected"),
+            AgentState::Connecting => StatusBadge::neutral("Waiting for agent..."),
+            AgentState::Initializing => StatusBadge::neutral("Agent initializing"),
+            AgentState::Idle => StatusBadge::neutral("Agent idle"),
+            AgentState::Listening => StatusBadge::ok("Agent listening"),
+            AgentState::Thinking => StatusBadge::ok("Agent thinking"),
+            AgentState::Speaking => StatusBadge::ok("Agent speaking"),
+            AgentState::Failed(AgentFailure::Timeout) => {
+                StatusBadge::error("Agent did not connect in time")
+            }
+            AgentState::Failed(AgentFailure::Left) => StatusBadge::error("Agent left"),
+            state => StatusBadge::neutral(format!("Agent {state:?}")),
+        }
+    }
 }
 
 fn speaker(message: &Message) -> &str {

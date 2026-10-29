@@ -59,8 +59,7 @@ impl RoomWindow {
             auth: Box::new(self.request.auth.clone()),
             auto_subscribe: self.request.auto_subscribe,
             dynacast: self.request.dynacast,
-            enable_e2ee: self.request.enable_e2ee,
-            key: self.request.key.clone(),
+            e2ee_key: self.request.e2ee_key.clone(),
         });
     }
 
@@ -220,9 +219,11 @@ impl RoomWindow {
                 )
                 .show(ui, |ui| {
                     ui.add(StatusBar {
-                        ctx: &ctx,
+                        room: ctx.room,
                         connecting: self.connecting,
                         connection_failure: self.connection_failure.as_deref(),
+                        detail: None,
+                        reconnect_hint: None,
                         actions: &mut actions,
                     });
                 });

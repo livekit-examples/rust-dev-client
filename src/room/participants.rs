@@ -10,6 +10,9 @@ pub enum TrackCmd {
 }
 
 impl TrackCmd {
+    /// Must run inside the Tokio runtime, hence the round trip through a
+    /// service actor: `set_subscribed` calls `tokio::spawn` through the
+    /// subscription callback, which panics on the egui thread.
     pub fn apply(self) {
         match self {
             TrackCmd::Subscribe(publication) => publication.set_subscribed(true),

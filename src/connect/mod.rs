@@ -1,25 +1,28 @@
 use crate::ui::{labeled_field::LabeledTextEdit, prominent_button::ProminentButton};
+use livekit::e2ee::{
+    E2eeOptions, EncryptionType,
+    key_provider::{KeyProvider, KeyProviderOptions},
+};
 use livekit_token_source::{
-    TokenSourceConfigurable, TokenSourceFetchOptions, development_token_server,
+    TokenSourceConfigurable, TokenSourceFetchOptions, TokenSourceFixed, development_token_server,
 };
 use std::time::Duration;
 
 mod agent;
 
-pub use agent::{AgentAuth, AgentConnectSettings, LocalTokenSource};
+pub use agent::{AgentConnectSettings, LocalTokenSource};
 
-/// How a room connection is authenticated. The methods that target a known
-/// server carry its URL; the token-source method learns it from the development token server.
+/// How a room or agent connection is authenticated. The methods that target a
+/// known server carry its URL; the token-source method learns it from the
+/// development token server.
 #[derive(Clone, Debug)]
 pub enum Auth {
-    /// A pre-generated access token (the room is encoded in it).
+    /// A pre-generated access token; the room, and any agent dispatch, are
+    /// encoded in it.
     Token { url: String, token: String },
-    /// API credentials from which a join token for `room` is generated on
-    /// demand, dispatching the source's agent if the room is new.
-    ApiKey {
-        source: LocalTokenSource,
-        room: String,
-    },
+    /// API credentials from which a join token is minted on demand,
+    /// dispatching the source's agent if the room is new.
+    ApiKey(LocalTokenSource),
     /// A LiveKit Cloud development token server, which provides both the server
     /// URL and the join token. `options` customizes the request; unset
     /// fields are left to server defaults.
@@ -30,40 +33,51 @@ pub enum Auth {
 }
 
 impl Auth {
-    /// Resolve to `(server_url, token)`: the JWT is generated locally for the
+    /// Resolve to `(server_url, token)`: the JWT is minted locally for the
     /// API-key method, fetched over HTTP for the token-source method.
     ///
     /// Async because of that fetch — call it from the service task, not the UI
     /// thread.
     pub async fn connection_details(&self) -> Result<(String, String), String> {
-        match self {
-            Auth::Token { url, token } => Ok((url.clone(), token.clone())),
-            Auth::ApiKey { source, room } => source
-                .mint(room.clone())
-                .map(|token| (source.url.clone(), token)),
+        let response = match self {
+            Auth::Token { url, token } => return Ok((url.clone(), token.clone())),
+            Auth::ApiKey(source) => source.fetch().await,
             Auth::DevelopmentTokenServer {
                 token_server_id,
                 options,
             } => {
-                let token_source = development_token_server(token_server_id);
-                let response = token_source
+                development_token_server(token_server_id)
                     .fetch(options)
                     .await
-                    .map_err(|e| e.to_string())?;
-                Ok((response.server_url, response.participant_token))
             }
-        }
+        };
+        response
+            .map(|response| (response.server_url, response.participant_token))
+            .map_err(|e| e.to_string())
     }
 
-    /// Short label of the connection target for window titles: the server URL
-    /// when known up front, otherwise the token server id.
+    /// Short label of the connection target for window titles: the agent being
+    /// dispatched, else the server URL when known up front, else the token
+    /// server id.
     pub fn target_label(&self) -> &str {
         match self {
             Auth::Token { url, .. } => url,
-            Auth::ApiKey { source, .. } => &source.url,
+            Auth::ApiKey(source) if !source.agent_name.is_empty() => &source.agent_name,
+            Auth::ApiKey(source) => &source.url,
             Auth::DevelopmentTokenServer {
                 token_server_id, ..
             } => token_server_id,
+        }
+    }
+
+    /// Whether reconnecting rejoins the same room, where an agent may not be
+    /// dispatched again. An agent session never asks a token server for a
+    /// room name (see `TokenSourceOptions::for_agent`).
+    pub fn reuses_room(&self) -> bool {
+        match self {
+            Auth::Token { .. } => true,
+            Auth::ApiKey(source) => source.room.is_some(),
+            Auth::DevelopmentTokenServer { .. } => false,
         }
     }
 }
@@ -73,10 +87,22 @@ impl Auth {
 #[derive(Clone)]
 pub struct ConnectSettings {
     pub auth: Auth,
-    pub key: String,
+    /// The shared E2EE key, if encryption is enabled.
+    pub e2ee_key: Option<String>,
     pub auto_subscribe: bool,
     pub dynacast: bool,
-    pub enable_e2ee: bool,
+}
+
+/// Room encryption with the shared `key`, or `None` without one.
+pub fn e2ee_options(key: Option<&str>) -> Option<E2eeOptions> {
+    let key = key?;
+    Some(E2eeOptions {
+        encryption_type: EncryptionType::Gcm,
+        key_provider: KeyProvider::with_shared_key(
+            KeyProviderOptions::default(),
+            key.as_bytes().to_vec(),
+        ),
+    })
 }
 
 /// What a Connect click asks the app to open.
@@ -106,7 +132,7 @@ enum AuthMethod {
     DevelopmentTokenServer,
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 struct TokenSourceOptions {
     room_name: String,
@@ -124,12 +150,7 @@ impl TokenSourceOptions {
     fn for_agent(&self) -> TokenSourceFetchOptions {
         TokenSourceFetchOptions::from(&TokenSourceOptions {
             room_name: String::new(),
-            participant_name: self.participant_name.clone(),
-            participant_identity: self.participant_identity.clone(),
-            participant_metadata: self.participant_metadata.clone(),
-            agent_name: self.agent_name.clone(),
-            agent_metadata: self.agent_metadata.clone(),
-            agent_deployment: self.agent_deployment.clone(),
+            ..self.clone()
         })
     }
 }
@@ -259,59 +280,54 @@ impl ConnectView {
     }
 
     fn local_token_source(&self) -> LocalTokenSource {
+        let options = &self.token_source_options;
         LocalTokenSource {
             url: self.url.clone(),
             api_key: self.api_key.clone(),
             api_secret: self.api_secret.clone(),
             identity: self.identity.clone(),
-            agent_name: self.token_source_options.agent_name.trim().to_string(),
-            agent_metadata: self.token_source_options.agent_metadata.clone(),
+            // An agent session gets a new room each time; see `LocalTokenSource::room`.
+            room: (self.mode == ConnectMode::Room).then(|| self.room.clone()),
+            agent_name: options.agent_name.trim().to_string(),
+            agent_metadata: options.agent_metadata.trim().to_string(),
         }
     }
 
-    fn room_settings(&self) -> ConnectSettings {
-        let auth = match self.method {
-            AuthMethod::ApiKey => Auth::ApiKey {
-                source: self.local_token_source(),
-                room: self.room.clone(),
-            },
+    /// The selected method's credentials, for the selected mode.
+    fn auth(&self) -> Auth {
+        match self.method {
+            AuthMethod::ApiKey => Auth::ApiKey(self.local_token_source()),
             AuthMethod::Token => Auth::Token {
                 url: self.url.clone(),
                 token: self.token.clone(),
             },
-            AuthMethod::DevelopmentTokenServer => {
-                let options = TokenSourceFetchOptions::from(&self.token_source_options);
-                Auth::DevelopmentTokenServer {
-                    token_server_id: self.token_server_id.clone(),
-                    options,
-                }
-            }
-        };
+            AuthMethod::DevelopmentTokenServer => Auth::DevelopmentTokenServer {
+                token_server_id: self.token_server_id.clone(),
+                options: match self.mode {
+                    ConnectMode::Room => TokenSourceFetchOptions::from(&self.token_source_options),
+                    ConnectMode::Agent => self.token_source_options.for_agent(),
+                },
+            },
+        }
+    }
+
+    fn e2ee_key(&self) -> Option<String> {
+        self.enable_e2ee.then(|| self.key.clone())
+    }
+
+    fn room_settings(&self) -> ConnectSettings {
         ConnectSettings {
-            auth,
-            key: self.key.clone(),
+            auth: self.auth(),
+            e2ee_key: self.e2ee_key(),
             auto_subscribe: self.auto_subscribe,
             dynacast: self.dynacast,
-            enable_e2ee: self.enable_e2ee,
         }
     }
 
     fn agent_settings(&self) -> AgentConnectSettings {
-        let auth = match self.method {
-            AuthMethod::ApiKey => AgentAuth::ApiKey(self.local_token_source()),
-            AuthMethod::Token => AgentAuth::Literal {
-                url: self.url.clone(),
-                token: self.token.clone(),
-            },
-            AuthMethod::DevelopmentTokenServer => AgentAuth::DevelopmentTokenServer {
-                token_server_id: self.token_server_id.clone(),
-                options: self.token_source_options.for_agent(),
-            },
-        };
         AgentConnectSettings {
-            auth,
-            key: self.key.clone(),
-            enable_e2ee: self.enable_e2ee,
+            auth: self.auth(),
+            e2ee_key: self.e2ee_key(),
             voice: self.voice,
             agent_connect_timeout: Duration::from_secs(self.agent_connect_timeout_secs),
         }
@@ -510,7 +526,12 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
     ui.add_space(8.0);
     ui.columns(2, |columns| {
         columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
-        columns[1].add(RoomNameField::new("Room", &mut view.room, mode));
+        columns[1]
+            .add(
+                LabeledTextEdit::singleline("Room", &mut view.room)
+                    .enabled(mode == ConnectMode::Room),
+            )
+            .on_disabled_hover_text(NEW_ROOM_HINT);
     });
     ui.add_space(8.0);
     let options = &mut view.token_source_options;
@@ -521,8 +542,8 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
                 &mut options.agent_name,
             ))
             .on_hover_text(
-                "Dispatched when the room is created; leave empty to rely on automatic \
-                 agent dispatch",
+                "Dispatched when the room is created, for room joins as well as agent \
+                 sessions; leave empty to rely on automatic agent dispatch",
             );
         columns[1].add(LabeledTextEdit::singleline(
             "Agent Metadata",
@@ -532,35 +553,10 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
     ui.add_space(8.0);
 }
 
-/// A room name field, editable only when joining a room. An agent session
-/// always gets a new room, so there the field stays in place, disabled and
-/// empty, to keep the layout from shifting between the modes.
-struct RoomNameField<'a> {
-    label: &'a str,
-    /// `None` in agent mode.
-    room: Option<&'a mut String>,
-}
-
-impl<'a> RoomNameField<'a> {
-    fn new(label: &'a str, room: &'a mut String, mode: ConnectMode) -> Self {
-        Self {
-            label,
-            room: (mode == ConnectMode::Room).then_some(room),
-        }
-    }
-}
-
-impl egui::Widget for RoomNameField<'_> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let enabled = self.room.is_some();
-        let mut empty = String::new();
-        let text = self.room.unwrap_or(&mut empty);
-        ui.add(LabeledTextEdit::singleline(self.label, text).enabled(enabled))
-            .on_disabled_hover_text(
-                "Agent sessions always use a new room, so the agent is dispatched into it",
-            )
-    }
-}
+/// Why the room name fields are disabled in agent mode. They stay in place to
+/// keep the layout from shifting between the modes.
+const NEW_ROOM_HINT: &str =
+    "Agent sessions always use a new room, so the agent is dispatched into it";
 
 /// The development token server id and its optional overrides. Agent sessions
 /// leave out the room name, so each one is dispatched into a new room.
@@ -578,11 +574,12 @@ fn token_server_fields(ui: &mut egui::Ui, view: &mut ConnectView, mode: ConnectM
     ui.add_space(8.0);
     let options = &mut view.token_source_options;
     ui.columns(2, |columns| {
-        columns[0].add(RoomNameField::new(
-            "Room Name",
-            &mut options.room_name,
-            mode,
-        ));
+        columns[0]
+            .add(
+                LabeledTextEdit::singleline("Room Name", &mut options.room_name)
+                    .enabled(mode == ConnectMode::Room),
+            )
+            .on_disabled_hover_text(NEW_ROOM_HINT);
         columns[1].add(LabeledTextEdit::singleline(
             "Participant Name",
             &mut options.participant_name,

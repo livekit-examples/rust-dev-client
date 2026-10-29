@@ -20,6 +20,7 @@ An example of building a cross-platform, GUI application using the [LiveKit Rust
 - [x] Send/receive remote procedure calls (RPC)
 - [x] Send/receive data streams
 - [x] Connect to an agent through a session ([livekit-session](https://github.com/livekit/rust-sdks/tree/main/livekit-session)): text chat, voice, live transcripts, and avatar video
+- [x] Dispatch a named agent into the room you join (API key and TokenSource methods)
 
 ## Building
 
