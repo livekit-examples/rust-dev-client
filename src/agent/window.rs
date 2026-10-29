@@ -5,7 +5,6 @@ use crate::{
     media::VideoRenderer,
     room::participants::ParticipantsPanel,
     room::status_bar::StatusBarActions,
-    service::PublishState,
     ui::{
         chat_message::ChatMessage,
         placeholder_tile::{PlaceholderTile, placeholder_texture},
@@ -17,6 +16,7 @@ use livekit_session::{AgentState, Message, MessageOrigin};
 use std::collections::BTreeMap;
 
 const AVATAR_HEIGHT: f32 = 200.0;
+const AVATAR_OVERLAY_MARGIN: f32 = 5.0;
 const SEND_BUTTON_WIDTH: f32 = 60.0;
 
 /// State and UI of a single agent session window. The session starts
@@ -30,7 +30,6 @@ pub struct AgentWindow {
     messages: BTreeMap<u64, Message>,
     draft: String,
     avatar: Option<VideoRenderer>,
-    mic: PublishState,
     connecting: bool,
     connection_failure: Option<String>,
     send_failure: Option<String>,
@@ -50,7 +49,6 @@ impl AgentWindow {
             messages: BTreeMap::new(),
             draft: String::new(),
             avatar: None,
-            mic: PublishState::default(),
             connecting: false,
             connection_failure: None,
             send_failure: None,
@@ -85,7 +83,6 @@ impl AgentWindow {
                     .collect();
             }
             AgentEvent::SendFailed(err) => self.send_failure = Some(err),
-            AgentEvent::Mic(state) => self.mic = state,
             AgentEvent::Avatar(track) => {
                 self.avatar = track.map(|track| {
                     VideoRenderer::new(&self.runtime, self.render_state.clone(), track.rtc_track())
@@ -104,24 +101,6 @@ impl AgentWindow {
         let mut actions = StatusBarActions::default();
         let bar_frame =
             egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 6));
-
-        egui::Panel::top("top_panel")
-            .frame(bar_frame)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let published = self.mic == PublishState::Published;
-                    let enabled = room.is_some() && self.mic != PublishState::Pending;
-                    let toggle = ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::selectable(published, "🎤 Microphone"),
-                        )
-                        .on_hover_text("Publish or unpublish the microphone");
-                    if toggle.clicked() {
-                        self.service.send(AgentCmd::ToggleMic);
-                    }
-                });
-            });
 
         egui::Panel::bottom("status_bar")
             .frame(bar_frame)
@@ -154,19 +133,7 @@ impl AgentWindow {
             .show(ui, |ui| self.composer(ui, snapshot.is_connected()));
 
         egui::CentralPanel::default().show(ui, |ui| {
-            let speaking = snapshot.agent_state == AgentState::Speaking;
-            ui.allocate_ui(
-                egui::vec2(ui.available_width(), AVATAR_HEIGHT),
-                |ui| match &self.avatar {
-                    Some(renderer) => {
-                        ui.add(VideoTile::new(renderer.texture_id(), "Avatar", speaking))
-                    }
-                    None => {
-                        let texture = placeholder_texture(ui.ctx());
-                        ui.add(PlaceholderTile::new(texture.id(), "Agent", speaking))
-                    }
-                },
-            );
+            self.agent_panel(ui, snapshot.agent_state);
             ui.separator();
 
             egui::ScrollArea::vertical()
@@ -199,6 +166,40 @@ impl AgentWindow {
         ui.ctx().request_repaint();
     }
 
+    /// The agent's avatar (or placeholder once it joined) with its state on top;
+    /// before that, only the state.
+    fn agent_panel(&self, ui: &mut egui::Ui, state: AgentState) {
+        let size = egui::vec2(ui.available_width(), AVATAR_HEIGHT);
+        if !has_joined(state) {
+            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            ui.painter().rect_filled(
+                rect.shrink(1.0),
+                egui::CornerRadius::default(),
+                ui.style().visuals.code_bg_color,
+            );
+            ui.place(rect, StatusBadge::from(state));
+            return;
+        }
+
+        let speaking = state == AgentState::Speaking;
+        let rect = ui
+            .allocate_ui(size, |ui| match &self.avatar {
+                Some(renderer) => ui.add(VideoTile::new(renderer.texture_id(), "Avatar", speaking)),
+                None => {
+                    let texture = placeholder_texture(ui.ctx());
+                    ui.add(PlaceholderTile::new(texture.id(), "Agent", speaking))
+                }
+            })
+            .inner
+            .rect;
+        ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink(AVATAR_OVERLAY_MARGIN))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        )
+        .add(StatusBadge::from(state));
+    }
+
     /// The text input with Enter-to-send, and the last send failure.
     fn composer(&mut self, ui: &mut egui::Ui, connected: bool) {
         ui.horizontal(|ui| {
@@ -225,6 +226,14 @@ impl AgentWindow {
             ui.add(StatusBadge::error(format!("Failed to send: {err}")));
         }
     }
+}
+
+/// Whether an agent participant is in the room.
+fn has_joined(state: AgentState) -> bool {
+    !matches!(
+        state,
+        AgentState::Disconnected | AgentState::Connecting | AgentState::Failed(_)
+    )
 }
 
 fn speaker(message: &Message) -> &str {
