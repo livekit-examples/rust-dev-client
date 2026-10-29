@@ -14,12 +14,10 @@ pub use agent::{AgentAuth, AgentConnectSettings, LocalTokenSource};
 pub enum Auth {
     /// A pre-generated access token (the room is encoded in it).
     Token { url: String, token: String },
-    /// API credentials from which a join token is generated on demand.
+    /// API credentials from which a join token for `room` is generated on
+    /// demand, dispatching the source's agent if the room is new.
     ApiKey {
-        url: String,
-        api_key: String,
-        api_secret: String,
-        identity: String,
+        source: LocalTokenSource,
         room: String,
     },
     /// A LiveKit Cloud development token server, which provides both the server
@@ -40,23 +38,9 @@ impl Auth {
     pub async fn connection_details(&self) -> Result<(String, String), String> {
         match self {
             Auth::Token { url, token } => Ok((url.clone(), token.clone())),
-            Auth::ApiKey {
-                url,
-                api_key,
-                api_secret,
-                identity,
-                room,
-            } => livekit_api::access_token::AccessToken::with_api_key(api_key, api_secret)
-                .with_identity(identity)
-                .with_name(identity)
-                .with_grants(livekit_api::access_token::VideoGrants {
-                    room_join: true,
-                    room: room.clone(),
-                    ..Default::default()
-                })
-                .to_jwt()
-                .map(|token| (url.clone(), token))
-                .map_err(|e| e.to_string()),
+            Auth::ApiKey { source, room } => source
+                .mint(room.clone())
+                .map(|token| (source.url.clone(), token)),
             Auth::DevelopmentTokenServer {
                 token_server_id,
                 options,
@@ -75,7 +59,8 @@ impl Auth {
     /// when known up front, otherwise the token server id.
     pub fn target_label(&self) -> &str {
         match self {
-            Auth::Token { url, .. } | Auth::ApiKey { url, .. } => url,
+            Auth::Token { url, .. } => url,
+            Auth::ApiKey { source, .. } => &source.url,
             Auth::DevelopmentTokenServer {
                 token_server_id, ..
             } => token_server_id,
@@ -196,7 +181,6 @@ impl From<&TokenSourceOptions> for TokenSourceFetchOptions {
 pub struct ConnectView {
     mode: ConnectMode,
     method: AuthMethod,
-    agent_method: AuthMethod,
     url: String,
     token: String,
     token_server_id: String,
@@ -229,7 +213,6 @@ impl Default for ConnectView {
         Self {
             mode: ConnectMode::default(),
             method: AuthMethod::default(),
-            agent_method: AuthMethod::DevelopmentTokenServer,
             url: env_or("LIVEKIT_URL", "ws://localhost:7880"),
             token: env_or("LIVEKIT_TOKEN", ""),
             token_server_id: String::new(),
@@ -250,20 +233,12 @@ impl Default for ConnectView {
 }
 
 impl ConnectView {
-    /// The auth method of the active mode.
-    fn active_method(&self) -> AuthMethod {
-        match self.mode {
-            ConnectMode::Room => self.method,
-            ConnectMode::Agent => self.agent_method,
-        }
-    }
-
     fn is_connect_enabled(&self) -> bool {
         let filled = |s: &str| !s.trim().is_empty();
         // The URL only matters for the methods that use it; the token-source
         // method gets its server URL from the development token server response.
         // Agent sessions never name a room.
-        match self.active_method() {
+        match self.method {
             AuthMethod::ApiKey => {
                 filled(&self.url)
                     && filled(&self.api_key)
@@ -283,13 +258,21 @@ impl ConnectView {
         }
     }
 
+    fn local_token_source(&self) -> LocalTokenSource {
+        LocalTokenSource {
+            url: self.url.clone(),
+            api_key: self.api_key.clone(),
+            api_secret: self.api_secret.clone(),
+            identity: self.identity.clone(),
+            agent_name: self.token_source_options.agent_name.trim().to_string(),
+            agent_metadata: self.token_source_options.agent_metadata.clone(),
+        }
+    }
+
     fn room_settings(&self) -> ConnectSettings {
         let auth = match self.method {
             AuthMethod::ApiKey => Auth::ApiKey {
-                url: self.url.clone(),
-                api_key: self.api_key.clone(),
-                api_secret: self.api_secret.clone(),
-                identity: self.identity.clone(),
+                source: self.local_token_source(),
                 room: self.room.clone(),
             },
             AuthMethod::Token => Auth::Token {
@@ -314,15 +297,8 @@ impl ConnectView {
     }
 
     fn agent_settings(&self) -> AgentConnectSettings {
-        let auth = match self.agent_method {
-            AuthMethod::ApiKey => AgentAuth::ApiKey(LocalTokenSource {
-                url: self.url.clone(),
-                api_key: self.api_key.clone(),
-                api_secret: self.api_secret.clone(),
-                identity: self.identity.clone(),
-                agent_name: self.token_source_options.agent_name.trim().to_string(),
-                agent_metadata: self.token_source_options.agent_metadata.clone(),
-            }),
+        let auth = match self.method {
+            AuthMethod::ApiKey => AgentAuth::ApiKey(self.local_token_source()),
             AuthMethod::Token => AgentAuth::Literal {
                 url: self.url.clone(),
                 token: self.token.clone(),
@@ -421,11 +397,9 @@ impl egui::Widget for ConnectForm<'_> {
             });
             ui.add_space(8.0);
 
+            // The method is shared between the modes, so switching keeps the tab.
             let mode = view.mode;
-            let method = match mode {
-                ConnectMode::Room => &mut view.method,
-                ConnectMode::Agent => &mut view.agent_method,
-            };
+            let method = &mut view.method;
             ui.horizontal(|ui| {
                 ui.selectable_value(method, AuthMethod::ApiKey, "API Key")
                     .on_hover_text(match mode {
@@ -467,43 +441,15 @@ impl egui::Widget for ConnectForm<'_> {
             // passes" warning flags. A stable salt keeps the id constant.
             // The URL lives inside the Token / API Key tabs (shared between
             // them): the token-source method gets its URL from the development token server.
-            ui.push_id("auth_method_fields", |ui| {
-                match (mode, view.active_method()) {
-                    (_, AuthMethod::Token) => {
-                        token_fields(ui, view, mask);
-                    }
-                    (ConnectMode::Room, AuthMethod::ApiKey) => {
-                        api_key_fields(ui, view, mask);
-                        ui.columns(2, |columns| {
-                            columns[0]
-                                .add(LabeledTextEdit::singleline("Identity", &mut view.identity));
-                            columns[1].add(LabeledTextEdit::singleline("Room", &mut view.room));
-                        });
-                        ui.add_space(8.0);
-                    }
-                    (ConnectMode::Agent, AuthMethod::ApiKey) => {
-                        api_key_fields(ui, view, mask);
-                        let options = &mut view.token_source_options;
-                        ui.columns(2, |columns| {
-                            columns[0]
-                                .add(LabeledTextEdit::singleline("Identity", &mut view.identity));
-                            columns[1]
-                                .add(LabeledTextEdit::singleline(
-                                    "Agent Name",
-                                    &mut options.agent_name,
-                                ))
-                                .on_hover_text("Leave empty to rely on automatic agent dispatch");
-                        });
-                        ui.add_space(8.0);
-                        ui.add(LabeledTextEdit::singleline(
-                            "Agent Metadata",
-                            &mut options.agent_metadata,
-                        ));
-                        ui.add_space(8.0);
-                    }
-                    (mode, AuthMethod::DevelopmentTokenServer) => {
-                        token_server_fields(ui, view, mode);
-                    }
+            ui.push_id("auth_method_fields", |ui| match view.method {
+                AuthMethod::Token => {
+                    token_fields(ui, view, mask);
+                }
+                AuthMethod::ApiKey => {
+                    api_key_fields(ui, view, mask, mode);
+                }
+                AuthMethod::DevelopmentTokenServer => {
+                    token_server_fields(ui, view, mode);
                 }
             });
 
@@ -552,7 +498,8 @@ fn token_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool) {
     ui.add_space(8.0);
 }
 
-fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool) {
+/// The API credentials, identity, room, and the agent to dispatch.
+fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: ConnectMode) {
     ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
     ui.add_space(8.0);
     ui.columns(2, |columns| {
@@ -561,6 +508,58 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool) {
             .add(LabeledTextEdit::singleline("API Secret", &mut view.api_secret).password(mask));
     });
     ui.add_space(8.0);
+    ui.columns(2, |columns| {
+        columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
+        columns[1].add(RoomNameField::new("Room", &mut view.room, mode));
+    });
+    ui.add_space(8.0);
+    let options = &mut view.token_source_options;
+    ui.columns(2, |columns| {
+        columns[0]
+            .add(LabeledTextEdit::singleline(
+                "Agent Name",
+                &mut options.agent_name,
+            ))
+            .on_hover_text(
+                "Dispatched when the room is created; leave empty to rely on automatic \
+                 agent dispatch",
+            );
+        columns[1].add(LabeledTextEdit::singleline(
+            "Agent Metadata",
+            &mut options.agent_metadata,
+        ));
+    });
+    ui.add_space(8.0);
+}
+
+/// A room name field, editable only when joining a room. An agent session
+/// always gets a new room, so there the field stays in place, disabled and
+/// empty, to keep the layout from shifting between the modes.
+struct RoomNameField<'a> {
+    label: &'a str,
+    /// `None` in agent mode.
+    room: Option<&'a mut String>,
+}
+
+impl<'a> RoomNameField<'a> {
+    fn new(label: &'a str, room: &'a mut String, mode: ConnectMode) -> Self {
+        Self {
+            label,
+            room: (mode == ConnectMode::Room).then_some(room),
+        }
+    }
+}
+
+impl egui::Widget for RoomNameField<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let enabled = self.room.is_some();
+        let mut empty = String::new();
+        let text = self.room.unwrap_or(&mut empty);
+        ui.add(LabeledTextEdit::singleline(self.label, text).enabled(enabled))
+            .on_disabled_hover_text(
+                "Agent sessions always use a new room, so the agent is dispatched into it",
+            )
+    }
 }
 
 /// The development token server id and its optional overrides. Agent sessions
@@ -578,48 +577,28 @@ fn token_server_fields(ui: &mut egui::Ui, view: &mut ConnectView, mode: ConnectM
     );
     ui.add_space(8.0);
     let options = &mut view.token_source_options;
-    match mode {
-        ConnectMode::Room => {
-            ui.columns(2, |columns| {
-                columns[0].add(LabeledTextEdit::singleline(
-                    "Room Name",
-                    &mut options.room_name,
-                ));
-                columns[1].add(LabeledTextEdit::singleline(
-                    "Participant Name",
-                    &mut options.participant_name,
-                ));
-            });
-            ui.add_space(8.0);
-            ui.columns(2, |columns| {
-                columns[0].add(LabeledTextEdit::singleline(
-                    "Participant Identity",
-                    &mut options.participant_identity,
-                ));
-                columns[1].add(LabeledTextEdit::singleline(
-                    "Participant Metadata",
-                    &mut options.participant_metadata,
-                ));
-            });
-        }
-        ConnectMode::Agent => {
-            ui.columns(2, |columns| {
-                columns[0].add(LabeledTextEdit::singleline(
-                    "Participant Name",
-                    &mut options.participant_name,
-                ));
-                columns[1].add(LabeledTextEdit::singleline(
-                    "Participant Identity",
-                    &mut options.participant_identity,
-                ));
-            });
-            ui.add_space(8.0);
-            ui.add(LabeledTextEdit::singleline(
-                "Participant Metadata",
-                &mut options.participant_metadata,
-            ));
-        }
-    }
+    ui.columns(2, |columns| {
+        columns[0].add(RoomNameField::new(
+            "Room Name",
+            &mut options.room_name,
+            mode,
+        ));
+        columns[1].add(LabeledTextEdit::singleline(
+            "Participant Name",
+            &mut options.participant_name,
+        ));
+    });
+    ui.add_space(8.0);
+    ui.columns(2, |columns| {
+        columns[0].add(LabeledTextEdit::singleline(
+            "Participant Identity",
+            &mut options.participant_identity,
+        ));
+        columns[1].add(LabeledTextEdit::singleline(
+            "Participant Metadata",
+            &mut options.participant_metadata,
+        ));
+    });
     ui.add_space(8.0);
     ui.columns(2, |columns| {
         columns[0].add(LabeledTextEdit::singleline(
