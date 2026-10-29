@@ -19,6 +19,7 @@ An example of building a cross-platform, GUI application using the [LiveKit Rust
 - [x] Simulate fault scenarios (e.g., reconnect, migration, etc.)
 - [x] Send/receive remote procedure calls (RPC)
 - [x] Send/receive data streams
+- [x] Connect to an agent through a session ([livekit-session](https://github.com/livekit/rust-sdks/tree/main/livekit-session)): text chat, voice, live transcripts, and avatar video
 
 ## Building
 
@@ -45,6 +46,7 @@ To build against a local checkout of the [LiveKit Rust SDK](https://github.com/l
    livekit-api = { path = "../rust-sdks/livekit-api", default-features = false, features = ["access-token"] }
    ```
    These are plain `path` dependencies, so cargo re-resolves automatically — no `cargo update` needed.
+   `livekit-session` is not published yet, so for now it is always a `path` dependency and the app needs a local `rust-sdks` checkout that includes it.
 3. `cargo run` — and rust-analyzer — now build against the local sources.
 
 To return to the published crates, reverse step 2: uncomment the two version lines and comment the `path` lines back out.

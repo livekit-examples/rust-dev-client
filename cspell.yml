@@ -36,6 +36,7 @@ words:
   - tsid
   - unmultiplied
   - unorm
+  - upserted
   - videotexture
   - viewports
   - webrtc

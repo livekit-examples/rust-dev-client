@@ -52,27 +52,58 @@ impl egui::Widget for StatusBar<'_> {
                 ui.label("Disconnected");
             }
 
-            egui::Aligned::new(egui::Align2::RIGHT_CENTER)
-                .id_salt("status_actions")
-                .show(ui, |ui| {
-                    let size = egui::vec2(BUTTON_WIDTH, 0.0);
-                    if connecting {
-                        ui.add_enabled(false, egui::Button::new("Connecting...").min_size(size));
-                    } else if room.is_some() {
-                        if ui
-                            .add(egui::Button::new("Disconnect").min_size(size))
-                            .clicked()
-                        {
-                            actions.disconnect = true;
-                        }
-                    } else if ui
-                        .add(egui::Button::new("Reconnect").min_size(size))
-                        .clicked()
-                    {
-                        actions.reconnect = true;
-                    }
-                });
+            ui.add(ConnectionButton {
+                connecting,
+                connected: room.is_some(),
+                reconnect_hint: None,
+                actions,
+            });
         })
         .response
+    }
+}
+
+/// The Connecting / Disconnect / Reconnect button, floated to the right of a
+/// status bar.
+pub struct ConnectionButton<'a> {
+    pub connecting: bool,
+    pub connected: bool,
+    /// Hover text for the Reconnect button.
+    pub reconnect_hint: Option<&'a str>,
+    pub actions: &'a mut StatusBarActions,
+}
+
+impl egui::Widget for ConnectionButton<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let ConnectionButton {
+            connecting,
+            connected,
+            reconnect_hint,
+            actions,
+        } = self;
+        egui::Aligned::new(egui::Align2::RIGHT_CENTER)
+            .id_salt("status_actions")
+            .show(ui, |ui| {
+                let size = egui::vec2(BUTTON_WIDTH, 0.0);
+                if connecting {
+                    ui.add_enabled(false, egui::Button::new("Connecting...").min_size(size));
+                } else if connected {
+                    if ui
+                        .add(egui::Button::new("Disconnect").min_size(size))
+                        .clicked()
+                    {
+                        actions.disconnect = true;
+                    }
+                } else {
+                    let mut reconnect = ui.add(egui::Button::new("Reconnect").min_size(size));
+                    if let Some(hint) = reconnect_hint {
+                        reconnect = reconnect.on_hover_text(hint);
+                    }
+                    if reconnect.clicked() {
+                        actions.reconnect = true;
+                    }
+                }
+            })
+            .response
     }
 }
