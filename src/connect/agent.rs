@@ -1,61 +1,24 @@
+use super::Auth;
 use async_trait::async_trait;
 use livekit_api::access_token::{AccessToken, VideoGrants};
 use livekit_protocol::{RoomAgentDispatch, RoomConfiguration};
 use livekit_session::SessionTokenSource;
 use livekit_token_source::{
-    TokenSourceError, TokenSourceFetchOptions, TokenSourceFixed, TokenSourceResponse,
-    TokenSourceResult, development_token_server, literal,
+    TokenSourceError, TokenSourceFixed, TokenSourceResponse, TokenSourceResult,
+    development_token_server, literal,
 };
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::time::Duration;
 
-/// How an agent session gets its credentials. Unlike a room connection, no
-/// method names the room: each session should land in a new one, because an
-/// agent is dispatched when its room is created.
-#[derive(Clone, Debug)]
-pub enum AgentAuth {
-    /// A pre-generated token; the agent dispatch must already be encoded in it.
-    Literal { url: String, token: String },
-    /// A LiveKit Cloud development token server, which dispatches the agent
-    /// named in `options`.
-    DevelopmentTokenServer {
-        token_server_id: String,
-        options: TokenSourceFetchOptions,
-    },
-    /// API credentials from which a token dispatching `agent_name` into a
-    /// fresh room is minted on every fetch.
-    ApiKey(LocalTokenSource),
-}
-
-impl AgentAuth {
-    /// Short label of the connection target for window titles.
-    pub fn target_label(&self) -> &str {
-        match self {
-            AgentAuth::Literal { url, .. } => url,
-            AgentAuth::DevelopmentTokenServer {
-                token_server_id, ..
-            } => token_server_id,
-            AgentAuth::ApiKey(source) if !source.agent_name.is_empty() => &source.agent_name,
-            AgentAuth::ApiKey(source) => &source.url,
-        }
-    }
-
-    /// Whether reconnecting rejoins the same room, where the agent may not be
-    /// dispatched again.
-    pub fn reuses_room(&self) -> bool {
-        matches!(self, AgentAuth::Literal { .. })
-    }
-}
-
-impl From<AgentAuth> for SessionTokenSource {
-    fn from(auth: AgentAuth) -> Self {
+impl From<Auth> for SessionTokenSource {
+    fn from(auth: Auth) -> Self {
         match auth {
-            AgentAuth::Literal { url, token } => literal(url, token).into(),
-            AgentAuth::DevelopmentTokenServer {
+            Auth::Token { url, token } => literal(url, token).into(),
+            Auth::DevelopmentTokenServer {
                 token_server_id,
                 options,
             } => (development_token_server(token_server_id), options).into(),
-            AgentAuth::ApiKey(source) => SessionTokenSource::fixed(source),
+            Auth::ApiKey(source) => SessionTokenSource::fixed(source),
         }
     }
 }
@@ -63,30 +26,33 @@ impl From<AgentAuth> for SessionTokenSource {
 /// Settings for starting an agent session, entered on the connect screen.
 #[derive(Clone)]
 pub struct AgentConnectSettings {
-    pub auth: AgentAuth,
-    pub key: String,
-    pub enable_e2ee: bool,
+    pub auth: Auth,
+    /// The shared E2EE key, if encryption is enabled.
+    pub e2ee_key: Option<String>,
     /// Publish the microphone as soon as the session starts.
     pub voice: bool,
     pub agent_connect_timeout: Duration,
 }
 
-/// Mints a token locally from API credentials. As a session's token source it
-/// uses a new room per fetch, so every session start dispatches the agent again.
+/// Mints a join token locally from API credentials.
 #[derive(Clone, Debug)]
 pub struct LocalTokenSource {
     pub url: String,
     pub api_key: String,
     pub api_secret: String,
     pub identity: String,
+    /// The room to join, or `None` for a new `agent-<random>` room per fetch,
+    /// so that every session start dispatches the agent again.
+    pub room: Option<String>,
     /// Empty to dispatch no agent explicitly, leaving it to automatic dispatch.
     pub agent_name: String,
     pub agent_metadata: String,
 }
 
 impl LocalTokenSource {
-    /// A join token for `room`, dispatching the agent if the room is new.
-    pub(super) fn mint(&self, room: String) -> Result<String, String> {
+    /// A join token for the room, dispatching the agent if the room is new.
+    fn mint(&self) -> Result<String, String> {
+        let room = self.room.clone().unwrap_or_else(random_room_name);
         let mut token = AccessToken::with_api_key(&self.api_key, &self.api_secret)
             .with_identity(&self.identity)
             .with_name(&self.identity)
@@ -112,13 +78,11 @@ impl LocalTokenSource {
 #[async_trait]
 impl TokenSourceFixed for LocalTokenSource {
     async fn fetch(&self) -> TokenSourceResult<TokenSourceResponse> {
-        let participant_token =
-            self.mint(random_room_name())
-                .map_err(|body| TokenSourceError::Server {
-                    // `TokenSourceError` has no variant for local failures.
-                    status: 0,
-                    body: format!("failed to mint token: {body}"),
-                })?;
+        let participant_token = self.mint().map_err(|body| TokenSourceError::Server {
+            // `TokenSourceError` has no variant for local failures.
+            status: 0,
+            body: format!("failed to mint token: {body}"),
+        })?;
         Ok(TokenSourceResponse {
             server_url: self.url.clone(),
             participant_token,
@@ -144,6 +108,7 @@ mod tests {
             api_key: "devkey".to_string(),
             api_secret: "secret".to_string(),
             identity: "participant-0".to_string(),
+            room: None,
             agent_name: agent_name.to_string(),
             agent_metadata: "{}".to_string(),
         }
@@ -162,6 +127,18 @@ mod tests {
         let second = claims(&source.fetch().await.unwrap());
         assert!(first.video.room.starts_with("agent-"));
         assert_ne!(first.video.room, second.video.room);
+    }
+
+    #[tokio::test]
+    async fn a_named_room_is_joined_as_is() {
+        let source = LocalTokenSource {
+            room: Some("dev-room".to_string()),
+            ..source("my-agent")
+        };
+        let first = claims(&source.fetch().await.unwrap());
+        let second = claims(&source.fetch().await.unwrap());
+        assert_eq!(first.video.room, "dev-room");
+        assert_eq!(second.video.room, "dev-room");
     }
 
     #[tokio::test]

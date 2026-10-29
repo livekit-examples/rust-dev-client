@@ -1,13 +1,9 @@
-use crate::connect::Auth;
+use crate::connect::{Auth, e2ee_options};
 use crate::media::{
     CaptureSource, CaptureTrack, MicTrack, OnUnpublished, SineParameters, SineTrack,
 };
 use crate::room::participants::{TrackCmd, TrackCommands};
-use livekit::{
-    SendByteOptions, SendTextOptions, SimulateScenario,
-    e2ee::{E2eeOptions, EncryptionType, key_provider::*},
-    prelude::*,
-};
+use livekit::{SendByteOptions, SendTextOptions, SimulateScenario, prelude::*};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,8 +17,8 @@ pub enum AsyncCmd {
         auth: Box<Auth>,
         auto_subscribe: bool,
         dynacast: bool,
-        enable_e2ee: bool,
-        key: String,
+        /// The shared E2EE key, if encryption is enabled.
+        e2ee_key: Option<String>,
     },
     RoomDisconnect,
     SimulateScenario {
@@ -334,8 +330,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 auth,
                 auto_subscribe,
                 dynacast,
-                enable_e2ee,
-                key,
+                e2ee_key,
             } => {
                 // Resolved here rather than UI-side: the token-source method
                 // fetches the connection details over HTTP, which must not
@@ -351,17 +346,10 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 log::info!("connecting to room: {}", url);
 
-                let key_provider =
-                    KeyProvider::with_shared_key(KeyProviderOptions::default(), key.into_bytes());
-                let e2ee = enable_e2ee.then_some(E2eeOptions {
-                    encryption_type: EncryptionType::Gcm,
-                    key_provider,
-                });
-
                 let mut options = RoomOptions::default();
                 options.auto_subscribe = auto_subscribe;
                 options.dynacast = dynacast;
-                options.encryption = e2ee;
+                options.encryption = e2ee_options(e2ee_key.as_deref());
 
                 let res = Room::connect(&url, &token, options).await;
 

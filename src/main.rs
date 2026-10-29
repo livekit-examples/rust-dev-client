@@ -9,8 +9,6 @@ fn main() {
     let viewport = egui::ViewportBuilder::default()
         .with_inner_size([420.0, 600.0])
         .with_resizable(false)
-        // The form isn't scrollable, so don't let it shrink below its content.
-        .with_min_inner_size([380.0, 480.0])
         .with_minimize_button(false);
 
     let options = eframe::NativeOptions {
