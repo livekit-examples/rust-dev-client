@@ -71,8 +71,8 @@ pub struct AgentConnectSettings {
     pub agent_connect_timeout: Duration,
 }
 
-/// Mints a token locally from API credentials, in a new room per fetch so every
-/// session start dispatches the agent again.
+/// Mints a token locally from API credentials. As a session's token source it
+/// uses a new room per fetch, so every session start dispatches the agent again.
 #[derive(Clone, Debug)]
 pub struct LocalTokenSource {
     pub url: String,
@@ -85,7 +85,8 @@ pub struct LocalTokenSource {
 }
 
 impl LocalTokenSource {
-    fn mint(&self, room: String) -> Result<String, String> {
+    /// A join token for `room`, dispatching the agent if the room is new.
+    pub(super) fn mint(&self, room: String) -> Result<String, String> {
         let mut token = AccessToken::with_api_key(&self.api_key, &self.api_secret)
             .with_identity(&self.identity)
             .with_name(&self.identity)
