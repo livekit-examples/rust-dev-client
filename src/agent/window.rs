@@ -91,7 +91,7 @@ impl AgentWindow {
             self.event(event);
         }
 
-        let snapshot = self.service.snapshot();
+        let state = self.service.state();
         let room = self.service.room();
         let mut actions = StatusBarActions::default();
         let bar_frame =
@@ -104,7 +104,7 @@ impl AgentWindow {
                     room: room.as_deref(),
                     connecting: self.connecting,
                     connection_failure: self.connection_failure.as_deref(),
-                    detail: Some(StatusBadge::from(snapshot.agent_state)),
+                    detail: Some(StatusBadge::from(state.agent)),
                     reconnect_hint: self.reuses_room.then_some(
                         "A pre-generated token rejoins the same room, where the agent may not \
                          be dispatched again",
@@ -128,10 +128,10 @@ impl AgentWindow {
 
         egui::Panel::bottom("composer")
             .frame(bar_frame)
-            .show(ui, |ui| self.composer(ui, snapshot.is_connected()));
+            .show(ui, |ui| self.composer(ui, state.connection.is_connected()));
 
         egui::CentralPanel::default().show(ui, |ui| {
-            self.agent_panel(ui, snapshot.agent_state);
+            self.agent_panel(ui, state.agent);
             ui.separator();
 
             egui::ScrollArea::vertical()

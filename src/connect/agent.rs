@@ -1,27 +1,15 @@
-use super::Auth;
+use super::{Auth, e2ee_options};
 use async_trait::async_trait;
+use livekit::prelude::RoomOptions;
 use livekit_api::access_token::{AccessToken, VideoGrants};
 use livekit_protocol::{RoomAgentDispatch, RoomConfiguration};
-use livekit_session::SessionTokenSource;
+use livekit_session::{Session, SessionOptions};
 use livekit_token_source::{
     TokenSourceError, TokenSourceFixed, TokenSourceResponse, TokenSourceResult,
     development_token_server, literal,
 };
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::time::Duration;
-
-impl From<Auth> for SessionTokenSource {
-    fn from(auth: Auth) -> Self {
-        match auth {
-            Auth::Token { url, token } => literal(url, token).into(),
-            Auth::DevelopmentTokenServer {
-                token_server_id,
-                options,
-            } => (development_token_server(token_server_id), options).into(),
-            Auth::ApiKey(source) => SessionTokenSource::fixed(source),
-        }
-    }
-}
 
 /// Settings for starting an agent session, entered on the connect screen.
 #[derive(Clone)]
@@ -32,6 +20,30 @@ pub struct AgentConnectSettings {
     /// Publish the microphone as soon as the session starts.
     pub voice: bool,
     pub agent_connect_timeout: Duration,
+}
+
+/// A session that connects as the settings say; nothing happens until it is
+/// started.
+impl From<&AgentConnectSettings> for Session {
+    fn from(settings: &AgentConnectSettings) -> Self {
+        let mut room_options = RoomOptions::default();
+        room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
+        let session_options = SessionOptions::default()
+            .with_agent_connect_timeout(settings.agent_connect_timeout)
+            .with_room_options(room_options);
+        match settings.auth.clone() {
+            Auth::Token { url, token } => Session::new(literal(url, token), session_options),
+            Auth::ApiKey(token_source) => Session::new(token_source, session_options),
+            Auth::DevelopmentTokenServer {
+                token_server_id,
+                options: fetch_options,
+            } => Session::with_fetch_options(
+                development_token_server(token_server_id),
+                fetch_options,
+                session_options,
+            ),
+        }
+    }
 }
 
 /// Mints a join token locally from API credentials.
@@ -144,7 +156,6 @@ mod tests {
     #[tokio::test]
     async fn dispatches_the_named_agent() {
         let response = source("my-agent").fetch().await.unwrap();
-        assert!(response.dispatches_agent());
         let agents = claims(&response).room_config.unwrap().agents;
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0].agent_name, "my-agent");
@@ -154,6 +165,6 @@ mod tests {
     #[tokio::test]
     async fn no_agent_name_dispatches_nothing() {
         let response = source("").fetch().await.unwrap();
-        assert!(!response.dispatches_agent());
+        assert!(claims(&response).room_config.is_none());
     }
 }
