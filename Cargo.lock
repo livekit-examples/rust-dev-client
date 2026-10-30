@@ -2901,9 +2901,9 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
 name = "livekit"
-version = "0.9.6"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7361f65ace7c7b4b0fdbaed46c3738075de6dece1fd715e05347d35d655d0af1"
+checksum = "597d8bae50d9de78c82d93b367b17bf08d62b0cd53727d493d7e56e8d3e58665"
 dependencies = [
  "bmrng",
  "bytes",
@@ -2949,9 +2949,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-capture"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db8b072473e2dfae6528ed8a25598bed7a1de0e642992f54faf695a04d4bbdf6"
+checksum = "5c898559bb6e7f768c356dc623a05223d408f131d359052368fbd6d1b40662be"
 dependencies = [
  "bytes",
  "chrono",
