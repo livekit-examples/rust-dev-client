@@ -3,7 +3,7 @@ use crate::media::{
     CaptureSource, CaptureTrack, MicTrack, OnUnpublished, SineParameters, SineTrack,
 };
 use livekit::{
-    SimulateScenario, StreamByteOptions, StreamTextOptions,
+    SendByteOptions, SendTextOptions, SimulateScenario,
     e2ee::{E2eeOptions, EncryptionType, key_provider::*},
     prelude::*,
     track::VideoQuality,
@@ -498,12 +498,12 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     tokio::spawn(async move {
                         let result = match payload {
                             DataStreamPayload::Text(text) => {
-                                let options = StreamTextOptions::new_with_topic(topic)
+                                let options = SendTextOptions::new_with_topic(topic)
                                     .with_destination_identities(destination_identities);
                                 local.send_text(&text, options).await.map(|info| info.id)
                             }
                             DataStreamPayload::Bytes(bytes) => {
-                                let options = StreamByteOptions::new_with_topic(topic)
+                                let options = SendByteOptions::new_with_topic(topic)
                                     .with_destination_identities(destination_identities);
                                 local.send_bytes(bytes, options).await.map(|info| info.id)
                             }
