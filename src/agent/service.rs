@@ -1,12 +1,10 @@
-use crate::connect::{AgentConnectSettings, e2ee_options};
+use crate::connect::AgentConnectSettings;
 use crate::media::MicTrack;
 use crate::room::participants::{TrackCmd, TrackCommands};
 use livekit::prelude::*;
-use livekit_session::{
-    Message, Session, SessionConnectionState, SessionEvent, SessionOptions, SessionSnapshot,
-};
+use livekit_session::{Message, Session, SessionConnectionState, SessionEvent, SessionState};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug)]
 pub enum AgentCmd {
@@ -28,23 +26,18 @@ pub enum AgentEvent {
 }
 
 /// The UI-side handle of an agent session: commands go to [`AgentActor`],
-/// events come back. State that is cheap to read synchronously (the snapshot
-/// and the room) is read from the session directly.
+/// events come back. State that is cheap to read synchronously (the session
+/// state and the room) is read from the session directly.
 pub struct AgentService {
     session: Session,
+    state: watch::Receiver<SessionState>,
     cmd_tx: mpsc::UnboundedSender<AgentCmd>,
     ui_rx: mpsc::UnboundedReceiver<AgentEvent>,
 }
 
 impl AgentService {
     pub fn new(runtime: &tokio::runtime::Handle, settings: &AgentConnectSettings) -> Self {
-        let mut room_options = RoomOptions::default();
-        room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
-        let options = SessionOptions {
-            agent_connect_timeout: settings.agent_connect_timeout,
-            room_options,
-        };
-        let session = Session::new(settings.auth.clone(), options);
+        let session = Session::from(settings);
 
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
@@ -58,6 +51,7 @@ impl AgentService {
         runtime.spawn(actor.run(cmd_rx));
 
         Self {
+            state: session.state(),
             session,
             cmd_tx,
             ui_rx,
@@ -72,8 +66,8 @@ impl AgentService {
         self.ui_rx.try_recv().ok()
     }
 
-    pub fn snapshot(&self) -> SessionSnapshot {
-        self.session.snapshot()
+    pub fn state(&self) -> SessionState {
+        *self.state.borrow()
     }
 
     pub fn room(&self) -> Option<Arc<Room>> {
@@ -136,8 +130,8 @@ impl AgentActor {
                 Input::Feed(_) => {}
                 Input::Room(event) => self.on_room_event(event),
                 Input::StateChanged => {
-                    let connection_state = state.borrow_and_update().connection_state;
-                    if connection_state == SessionConnectionState::Disconnected
+                    let connection = state.borrow_and_update().connection;
+                    if connection == SessionConnectionState::Disconnected
                         && self.connection.is_some()
                     {
                         self.release();
@@ -146,8 +140,7 @@ impl AgentActor {
             }
         }
 
-        // Fails only when the session already ended.
-        let _ = self.session.end().await;
+        self.session.end().await;
     }
 
     async fn handle(&mut self, cmd: AgentCmd) {
@@ -208,9 +201,7 @@ impl AgentActor {
         {
             log::warn!("failed to unpublish microphone: {err}");
         }
-        if let Err(err) = self.session.end().await {
-            log::warn!("failed to end agent session: {err}");
-        }
+        self.session.end().await;
         self.release();
     }
 
