@@ -7,7 +7,7 @@ fn main() {
         .init();
 
     let viewport = egui::ViewportBuilder::default()
-        .with_inner_size([380.0, 480.0])
+        .with_inner_size([420.0, 600.0])
         .with_resizable(false)
         .with_minimize_button(false);
 
@@ -15,7 +15,7 @@ fn main() {
         viewport,
         centered: true,
         // Persist only the connect form (see AppRoot::save), not window geometry —
-        // the root window is fixed-size and centered.
+        // the root window always opens centered at its default size.
         persist_window: false,
         ..Default::default()
     };

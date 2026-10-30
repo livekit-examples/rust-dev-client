@@ -1,13 +1,9 @@
-use crate::connect::Auth;
+use crate::connect::{Auth, e2ee_options};
 use crate::media::{
     CaptureSource, CaptureTrack, MicTrack, OnUnpublished, SineParameters, SineTrack,
 };
-use livekit::{
-    SimulateScenario, StreamByteOptions, StreamTextOptions,
-    e2ee::{E2eeOptions, EncryptionType, key_provider::*},
-    prelude::*,
-    track::VideoQuality,
-};
+use crate::room::participants::{TrackCmd, TrackCommands};
+use livekit::{SendByteOptions, SendTextOptions, SimulateScenario, prelude::*};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,8 +17,8 @@ pub enum AsyncCmd {
         auth: Box<Auth>,
         auto_subscribe: bool,
         dynacast: bool,
-        enable_e2ee: bool,
-        key: String,
+        /// The shared E2EE key, if encryption is enabled.
+        e2ee_key: Option<String>,
     },
     RoomDisconnect,
     SimulateScenario {
@@ -31,16 +27,7 @@ pub enum AsyncCmd {
     TogglePublish {
         source: LocalSource,
     },
-    SubscribeTrack {
-        publication: RemoteTrackPublication,
-    },
-    UnsubscribeTrack {
-        publication: RemoteTrackPublication,
-    },
-    SetVideoQuality {
-        publication: RemoteTrackPublication,
-        quality: VideoQuality,
-    },
+    Track(TrackCmd),
     E2eeKeyRatchet,
     LogStats,
     RpcSendRequest {
@@ -200,6 +187,12 @@ impl LkService {
     }
 }
 
+impl TrackCommands for LkService {
+    fn track_cmd(&self, cmd: TrackCmd) {
+        let _ = self.send(AsyncCmd::Track(cmd));
+    }
+}
+
 async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedReceiver<AsyncCmd>) {
     struct RunningState {
         room: Arc<Room>,
@@ -337,8 +330,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                 auth,
                 auto_subscribe,
                 dynacast,
-                enable_e2ee,
-                key,
+                e2ee_key,
             } => {
                 // Resolved here rather than UI-side: the token-source method
                 // fetches the connection details over HTTP, which must not
@@ -354,17 +346,10 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
 
                 log::info!("connecting to room: {}", url);
 
-                let key_provider =
-                    KeyProvider::with_shared_key(KeyProviderOptions::default(), key.into_bytes());
-                let e2ee = enable_e2ee.then_some(E2eeOptions {
-                    encryption_type: EncryptionType::Gcm,
-                    key_provider,
-                });
-
                 let mut options = RoomOptions::default();
                 options.auto_subscribe = auto_subscribe;
                 options.dynacast = dynacast;
-                options.encryption = e2ee;
+                options.encryption = e2ee_options(e2ee_key.as_deref());
 
                 let res = Room::connect(&url, &token, options).await;
 
@@ -437,18 +422,7 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     PublishState::Unpublished
                 });
             }
-            AsyncCmd::SubscribeTrack { publication } => {
-                publication.set_subscribed(true);
-            }
-            AsyncCmd::UnsubscribeTrack { publication } => {
-                publication.set_subscribed(false);
-            }
-            AsyncCmd::SetVideoQuality {
-                publication,
-                quality,
-            } => {
-                publication.set_video_quality(quality);
-            }
+            AsyncCmd::Track(cmd) => cmd.apply(),
             AsyncCmd::E2eeKeyRatchet => {
                 if let Some(state) = running_state.as_ref() {
                     let e2ee_manager = state.room.e2ee_manager();
@@ -498,12 +472,12 @@ async fn service_task(inner: Arc<ServiceInner>, mut cmd_rx: mpsc::UnboundedRecei
                     tokio::spawn(async move {
                         let result = match payload {
                             DataStreamPayload::Text(text) => {
-                                let options = StreamTextOptions::new_with_topic(topic)
+                                let options = SendTextOptions::new_with_topic(topic)
                                     .with_destination_identities(destination_identities);
                                 local.send_text(&text, options).await.map(|info| info.id)
                             }
                             DataStreamPayload::Bytes(bytes) => {
-                                let options = StreamByteOptions::new_with_topic(topic)
+                                let options = SendByteOptions::new_with_topic(topic)
                                     .with_destination_identities(destination_identities);
                                 local.send_bytes(bytes, options).await.map(|info| info.id)
                             }
