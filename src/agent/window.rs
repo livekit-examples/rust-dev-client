@@ -180,7 +180,7 @@ impl AgentWindow {
         let speaking = state == AgentState::Speaking;
         let rect = ui
             .allocate_ui(size, |ui| match &self.avatar {
-                Some(renderer) => ui.add(VideoTile::new(renderer.texture_id(), "Avatar", speaking)),
+                Some(renderer) => ui.add(VideoTile::new(renderer.texture(), "Avatar", speaking)),
                 None => {
                     let texture = placeholder_texture(ui.ctx());
                     ui.add(PlaceholderTile::new(texture.id(), "Agent", speaking))
