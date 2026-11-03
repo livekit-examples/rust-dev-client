@@ -483,8 +483,10 @@ impl egui::Widget for ConnectForm<'_> {
                     ui.checkbox(&mut view.dynacast, "Dynacast");
                 }
                 ConnectMode::Agent => {
-                    ui.checkbox(&mut view.voice, "Voice")
-                        .on_hover_text("Publish the microphone as soon as the session starts");
+                    ui.checkbox(&mut view.voice, "Voice").on_hover_text(
+                        "Capture the microphone and play the agent's audio through the \
+                         platform's audio devices; uncheck to talk by text only",
+                    );
                     ui.horizontal(|ui| {
                         ui.label("Agent connect timeout");
                         ui.add(

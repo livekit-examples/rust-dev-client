@@ -17,7 +17,8 @@ pub struct AgentConnectSettings {
     pub auth: Auth,
     /// The shared E2EE key, if encryption is enabled.
     pub e2ee_key: Option<String>,
-    /// Publish the microphone as soon as the session starts.
+    /// Capture the microphone and play the agent's audio through the
+    /// platform's audio devices; off for a conversation by text alone.
     pub voice: bool,
     pub agent_connect_timeout: Duration,
 }
@@ -30,7 +31,8 @@ impl From<&AgentConnectSettings> for Session {
         room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
         let session_options = SessionOptions::default()
             .with_agent_connect_timeout(settings.agent_connect_timeout)
-            .with_room_options(room_options);
+            .with_room_options(room_options)
+            .with_platform_audio(settings.voice);
         match settings.auth.clone() {
             Auth::Token { url, token } => Session::new(literal(url, token), session_options),
             Auth::ApiKey(token_source) => Session::new(token_source, session_options),

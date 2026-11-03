@@ -1,5 +1,4 @@
 use crate::connect::AgentConnectSettings;
-use crate::media::MicTrack;
 use crate::room::participants::{TrackCmd, TrackCommands};
 use livekit::prelude::*;
 use livekit_session::{Message, Session, SessionConnectionState, SessionEvent, SessionState};
@@ -43,9 +42,8 @@ impl AgentService {
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
         let actor = AgentActor {
             session: session.clone(),
-            voice: settings.voice,
             ui_tx,
-            connection: None,
+            room_events: None,
             avatar_sid: None,
         };
         runtime.spawn(actor.run(cmd_rx));
@@ -81,15 +79,6 @@ impl TrackCommands for AgentService {
     }
 }
 
-/// What the actor holds while the session's room is connected.
-struct Connection {
-    room_events: mpsc::UnboundedReceiver<RoomEvent>,
-    // Drives playout of the agent's audio and is shared with the mic for
-    // capture. It must exist before the room connects.
-    platform_audio: Option<PlatformAudio>,
-    mic: MicTrack,
-}
-
 enum Input {
     Cmd(Option<AgentCmd>),
     Feed(SessionEvent),
@@ -97,13 +86,14 @@ enum Input {
     StateChanged,
 }
 
-/// Owns the session's async side: starting and ending it, the microphone,
-/// and forwarding the message feed and avatar changes to the UI.
+/// Owns the session's async side: starting and ending it, and forwarding the
+/// message feed and avatar changes to the UI. The microphone and the agent's
+/// audio are the session's own (`SessionOptions::platform_audio`).
 struct AgentActor {
     session: Session,
-    voice: bool,
     ui_tx: mpsc::UnboundedSender<AgentEvent>,
-    connection: Option<Connection>,
+    /// The connected room's events, `None` while there is no room.
+    room_events: Option<mpsc::UnboundedReceiver<RoomEvent>>,
     avatar_sid: Option<TrackSid>,
 }
 
@@ -116,7 +106,7 @@ impl AgentActor {
             let input = tokio::select! {
                 cmd = cmd_rx.recv() => Input::Cmd(cmd),
                 Some(event) = feed.recv() => Input::Feed(event),
-                Some(event) = recv_room_event(&mut self.connection) => Input::Room(event),
+                Some(event) = recv_room_event(&mut self.room_events) => Input::Room(event),
                 Ok(()) = state.changed() => Input::StateChanged,
             };
             match input {
@@ -132,7 +122,7 @@ impl AgentActor {
                 Input::StateChanged => {
                     let connection = state.borrow_and_update().connection;
                     if connection == SessionConnectionState::Disconnected
-                        && self.connection.is_some()
+                        && self.room_events.is_some()
                     {
                         self.release();
                     }
@@ -146,7 +136,10 @@ impl AgentActor {
     async fn handle(&mut self, cmd: AgentCmd) {
         match cmd {
             AgentCmd::Start => self.start().await,
-            AgentCmd::End => self.end().await,
+            AgentCmd::End => {
+                self.session.end().await;
+                self.release();
+            }
             AgentCmd::SendText(text) => {
                 if let Err(err) = self.session.send_text(&text).await {
                     self.emit(AgentEvent::SendFailed(err.to_string()));
@@ -157,14 +150,6 @@ impl AgentActor {
     }
 
     async fn start(&mut self) {
-        let platform_audio = match PlatformAudio::new() {
-            Ok(audio) => Some(audio),
-            Err(err) => {
-                log::error!("failed to init platform audio (agent audio + mic disabled): {err}");
-                None
-            }
-        };
-
         if let Err(err) = self.session.start().await {
             log::error!("failed to start agent session: {err}");
             self.emit(AgentEvent::StartResult(Err(err.to_string())));
@@ -178,50 +163,15 @@ impl AgentActor {
         };
         log::info!("agent session connected to room: {}", room.name());
 
-        self.connection = Some(Connection {
-            room_events: room.subscribe(),
-            platform_audio,
-            mic: MicTrack::new(room),
-        });
+        self.room_events = Some(room.subscribe());
         self.emit(AgentEvent::StartResult(Ok(())));
         self.refresh_avatar();
-        if self.voice {
-            self.publish_mic().await;
-        }
     }
 
-    async fn end(&mut self) {
-        if let Some(Connection {
-            platform_audio: Some(platform_audio),
-            mut mic,
-            ..
-        }) = self.connection.take()
-            && mic.is_published()
-            && let Err(err) = mic.unpublish(&platform_audio).await
-        {
-            log::warn!("failed to unpublish microphone: {err}");
-        }
-        self.session.end().await;
-        self.release();
-    }
-
-    /// Drops what belonged to the connection once the room is gone.
+    /// Drops what belonged to the room once it is gone.
     fn release(&mut self) {
-        self.connection = None;
+        self.room_events = None;
         self.refresh_avatar();
-    }
-
-    async fn publish_mic(&mut self) {
-        let Some(connection) = self.connection.as_mut() else {
-            return;
-        };
-        let Some(platform_audio) = connection.platform_audio.as_ref() else {
-            log::error!("cannot publish microphone: platform audio unavailable");
-            return;
-        };
-        if let Err(err) = connection.mic.publish(platform_audio).await {
-            log::error!("failed to publish microphone: {err}");
-        }
     }
 
     fn on_room_event(&mut self, event: RoomEvent) {
@@ -238,7 +188,7 @@ impl AgentActor {
     /// Reports the avatar's video track when it changes.
     fn refresh_avatar(&mut self) {
         let track = self
-            .connection
+            .room_events
             .as_ref()
             .and_then(|_| self.session.agent_avatar_video_track());
         let sid = track.as_ref().map(|track| track.sid());
@@ -254,9 +204,11 @@ impl AgentActor {
 }
 
 /// The next event of the connected room; pending while there is none.
-async fn recv_room_event(connection: &mut Option<Connection>) -> Option<RoomEvent> {
-    match connection {
-        Some(connection) => connection.room_events.recv().await,
+async fn recv_room_event(
+    room_events: &mut Option<mpsc::UnboundedReceiver<RoomEvent>>,
+) -> Option<RoomEvent> {
+    match room_events {
+        Some(events) => events.recv().await,
         None => std::future::pending().await,
     }
 }
