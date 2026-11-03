@@ -1,3 +1,4 @@
+use egui::load::SizedTexture;
 use futures::StreamExt;
 use livekit::webrtc::native::yuv_helper;
 use livekit::webrtc::prelude::*;
@@ -102,9 +103,12 @@ impl VideoRenderer {
         }
     }
 
-    // Returns the texture id, can be used to draw the texture on the UI
-    pub fn texture_id(&self) -> Option<egui::TextureId> {
-        self.internal.lock().egui_texture
+    /// The latest frame as a sized texture, or `None` before the first frame.
+    pub fn texture(&self) -> Option<SizedTexture> {
+        let internal = self.internal.lock();
+        let id = internal.egui_texture?;
+        let size = egui::vec2(internal.width as f32, internal.height as f32);
+        Some(SizedTexture::new(id, size))
     }
 }
 
