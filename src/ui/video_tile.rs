@@ -63,10 +63,15 @@ impl egui::Widget for VideoTile<'_> {
     }
 }
 
+/// `frame` scaled to the largest size with its aspect ratio that fits in `bounds`.
+pub fn fit_size(bounds: egui::Vec2, frame: egui::Vec2) -> egui::Vec2 {
+    let scale = (bounds.x / frame.x).min(bounds.y / frame.y);
+    frame * scale
+}
+
 /// The largest rect with `frame`'s aspect ratio that fits inside `cell`, centered.
 fn fit_rect(cell: egui::Rect, frame: egui::Vec2) -> egui::Rect {
-    let scale = (cell.width() / frame.x).min(cell.height() / frame.y);
-    egui::Rect::from_center_size(cell.center(), frame * scale)
+    egui::Rect::from_center_size(cell.center(), fit_size(cell.size(), frame))
 }
 
 #[cfg(test)]

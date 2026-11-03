@@ -8,13 +8,14 @@ use crate::{
         chat_message::ChatMessage,
         placeholder_tile::{PlaceholderTile, placeholder_texture},
         status_badge::StatusBadge,
-        video_tile::VideoTile,
+        video_tile::{VideoTile, fit_size},
     },
 };
 use livekit_session::{AgentFailure, AgentState, Message, MessageOrigin};
 use std::collections::BTreeMap;
 
-const AVATAR_HEIGHT: f32 = 200.0;
+/// Share of the panel height the avatar may take; the feed gets the rest.
+const AVATAR_HEIGHT_FRACTION: f32 = 0.4;
 const AVATAR_OVERLAY_MARGIN: f32 = 5.0;
 const SEND_BUTTON_WIDTH: f32 = 60.0;
 
@@ -163,11 +164,15 @@ impl AgentWindow {
     }
 
     /// The agent's avatar (or placeholder once it joined) with its state on top;
-    /// before that, only the state.
+    /// before that, only the state. The avatar keeps its aspect ratio: it is
+    /// scaled to fit the panel width and a share of its height, and centered.
     fn agent_panel(&self, ui: &mut egui::Ui, state: AgentState) {
-        let size = egui::vec2(ui.available_width(), AVATAR_HEIGHT);
+        let bounds = egui::vec2(
+            ui.available_width(),
+            ui.available_height() * AVATAR_HEIGHT_FRACTION,
+        );
         if !has_joined(state) {
-            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(bounds, egui::Sense::hover());
             ui.painter().rect_filled(
                 rect.shrink(1.0),
                 egui::CornerRadius::default(),
@@ -178,16 +183,19 @@ impl AgentWindow {
         }
 
         let speaking = state == AgentState::Speaking;
-        let rect = ui
-            .allocate_ui(size, |ui| match &self.avatar {
-                Some(renderer) => ui.add(VideoTile::new(renderer.texture(), "Avatar", speaking)),
-                None => {
-                    let texture = placeholder_texture(ui.ctx());
-                    ui.add(PlaceholderTile::new(texture.id(), "Agent", speaking))
-                }
-            })
-            .inner
-            .rect;
+        let texture = self.avatar.as_ref().and_then(VideoRenderer::texture);
+        let size = texture.map_or(bounds, |texture| fit_size(bounds, texture.size));
+        let (row, _) = ui.allocate_exact_size(egui::vec2(bounds.x, size.y), egui::Sense::hover());
+        let rect = egui::Rect::from_center_size(row.center(), size);
+        if self.avatar.is_some() {
+            ui.place(rect, VideoTile::new(texture, "Avatar", speaking));
+        } else {
+            let placeholder = placeholder_texture(ui.ctx());
+            ui.place(
+                rect,
+                PlaceholderTile::new(placeholder.id(), "Agent", speaking),
+            );
+        }
         ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(rect.shrink(AVATAR_OVERLAY_MARGIN))
