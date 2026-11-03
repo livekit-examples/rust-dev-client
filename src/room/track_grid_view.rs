@@ -76,12 +76,12 @@ impl egui::Widget for TrackGridView<'_> {
                                         else {
                                             continue;
                                         };
-                                        if renderer.texture_id().is_none() {
+                                        let Some(texture) = renderer.texture() else {
                                             continue; // no frame decoded yet
-                                        }
+                                        };
                                         ui.track_frame(|ui| {
                                             ui.add(VideoTile::new(
-                                                renderer.texture_id(),
+                                                Some(texture),
                                                 identity.as_str(),
                                                 speaking,
                                             ));
