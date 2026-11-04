@@ -61,6 +61,8 @@ pub struct LocalTokenSource {
     /// Empty to dispatch no agent explicitly, leaving it to automatic dispatch.
     pub agent_name: String,
     pub agent_metadata: String,
+    /// Empty to target the agent's production deployment.
+    pub agent_deployment: String,
 }
 
 impl LocalTokenSource {
@@ -80,6 +82,7 @@ impl LocalTokenSource {
                 agents: vec![RoomAgentDispatch {
                     agent_name: self.agent_name.clone(),
                     metadata: self.agent_metadata.clone(),
+                    deployment: self.agent_deployment.clone(),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -125,6 +128,7 @@ mod tests {
             room: None,
             agent_name: agent_name.to_string(),
             agent_metadata: "{}".to_string(),
+            agent_deployment: String::new(),
         }
     }
 
@@ -162,6 +166,18 @@ mod tests {
         assert_eq!(agents.len(), 1);
         assert_eq!(agents[0].agent_name, "my-agent");
         assert_eq!(agents[0].metadata, "{}");
+        assert_eq!(agents[0].deployment, "");
+    }
+
+    #[tokio::test]
+    async fn targets_the_named_deployment() {
+        let source = LocalTokenSource {
+            agent_deployment: "preview".to_string(),
+            ..source("my-agent")
+        };
+        let response = source.fetch().await.unwrap();
+        let agents = claims(&response).room_config.unwrap().agents;
+        assert_eq!(agents[0].deployment, "preview");
     }
 
     #[tokio::test]

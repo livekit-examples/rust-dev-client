@@ -290,6 +290,7 @@ impl ConnectView {
             room: (self.mode == ConnectMode::Room).then(|| self.room.clone()),
             agent_name: options.agent_name.trim().to_string(),
             agent_metadata: options.agent_metadata.trim().to_string(),
+            agent_deployment: options.agent_deployment.trim().to_string(),
         }
     }
 
@@ -547,11 +548,21 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
                 "Dispatched when the room is created, for room joins as well as agent \
                  sessions; leave empty to rely on automatic agent dispatch",
             );
-        columns[1].add(LabeledTextEdit::singleline(
-            "Agent Metadata",
-            &mut options.agent_metadata,
-        ));
+        columns[1]
+            .add(LabeledTextEdit::singleline(
+                "Agent Deployment",
+                &mut options.agent_deployment,
+            ))
+            .on_hover_text(
+                "Targets a deployment of the named agent; leave empty for its production \
+                 deployment",
+            );
     });
+    ui.add_space(8.0);
+    ui.add(LabeledTextEdit::singleline(
+        "Agent Metadata",
+        &mut options.agent_metadata,
+    ));
     ui.add_space(8.0);
 }
 
