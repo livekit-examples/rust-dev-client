@@ -11,7 +11,7 @@ use crate::{
         video_tile::{VideoTile, fit_size},
     },
 };
-use livekit_session::{AgentFailure, AgentState, Message, MessageOrigin};
+use livekit_session::{AgentActivity, AgentFailure, AgentState, Message, MessageOrigin};
 use std::collections::BTreeMap;
 
 /// Share of the panel height the avatar may take; the feed gets the rest.
@@ -182,7 +182,7 @@ impl AgentWindow {
             return;
         }
 
-        let speaking = state == AgentState::Speaking;
+        let speaking = state == AgentState::Connected(AgentActivity::Speaking);
         let texture = self.avatar.as_ref().and_then(VideoRenderer::texture);
         let size = texture.map_or(bounds, |texture| fit_size(bounds, texture.size));
         let (row, _) = ui.allocate_exact_size(egui::vec2(bounds.x, size.y), egui::Sense::hover());
@@ -234,10 +234,7 @@ impl AgentWindow {
 
 /// Whether an agent participant is in the room.
 fn has_joined(state: AgentState) -> bool {
-    !matches!(
-        state,
-        AgentState::Disconnected | AgentState::Connecting | AgentState::Failed(_)
-    )
+    matches!(state, AgentState::Connected(_))
 }
 
 impl From<AgentState> for StatusBadge {
@@ -245,16 +242,25 @@ impl From<AgentState> for StatusBadge {
         match state {
             AgentState::Disconnected => StatusBadge::muted("Agent disconnected"),
             AgentState::Connecting => StatusBadge::neutral("Waiting for agent..."),
-            AgentState::Initializing => StatusBadge::neutral("Agent initializing"),
-            AgentState::Idle => StatusBadge::neutral("Agent idle"),
-            AgentState::Listening => StatusBadge::ok("Agent listening"),
-            AgentState::Thinking => StatusBadge::ok("Agent thinking"),
-            AgentState::Speaking => StatusBadge::ok("Agent speaking"),
+            AgentState::Connected(activity) => StatusBadge::from(activity),
             AgentState::Failed(AgentFailure::Timeout) => {
                 StatusBadge::error("Agent did not connect in time")
             }
             AgentState::Failed(AgentFailure::Left) => StatusBadge::error("Agent left"),
             state => StatusBadge::neutral(format!("Agent {state:?}")),
+        }
+    }
+}
+
+impl From<AgentActivity> for StatusBadge {
+    fn from(activity: AgentActivity) -> Self {
+        match activity {
+            AgentActivity::Initializing => StatusBadge::neutral("Agent initializing"),
+            AgentActivity::Idle => StatusBadge::neutral("Agent idle"),
+            AgentActivity::Listening => StatusBadge::ok("Agent listening"),
+            AgentActivity::Thinking => StatusBadge::ok("Agent thinking"),
+            AgentActivity::Speaking => StatusBadge::ok("Agent speaking"),
+            activity => StatusBadge::neutral(format!("Agent {activity:?}")),
         }
     }
 }
