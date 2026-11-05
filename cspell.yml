@@ -8,6 +8,7 @@ dictionaries:
   - rust
 words:
   - abgr
+  - chrono
   - codegen
   - debuginfo
   - deque

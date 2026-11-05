@@ -11,10 +11,10 @@ use livekit_token_source::{
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::time::Duration;
 
-/// Settings for starting an agent session, entered on the connect screen.
+/// How a session with an agent joins its room: an agent session, or the call
+/// of a thread.
 #[derive(Clone)]
-pub struct AgentConnectSettings {
-    pub auth: Auth,
+pub struct CallSettings {
     /// The shared E2EE key, if encryption is enabled.
     pub e2ee_key: Option<String>,
     /// Capture the microphone and play the agent's audio through the
@@ -23,16 +23,29 @@ pub struct AgentConnectSettings {
     pub agent_connect_timeout: Duration,
 }
 
+impl From<&CallSettings> for SessionOptions {
+    fn from(settings: &CallSettings) -> Self {
+        let mut room_options = RoomOptions::default();
+        room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
+        SessionOptions::default()
+            .with_agent_connect_timeout(settings.agent_connect_timeout)
+            .with_room_options(room_options)
+            .with_platform_audio(settings.voice)
+    }
+}
+
+/// Settings for starting an agent session, entered on the connect screen.
+#[derive(Clone)]
+pub struct AgentConnectSettings {
+    pub auth: Auth,
+    pub call: CallSettings,
+}
+
 /// A session that connects as the settings say; nothing happens until it is
 /// started.
 impl From<&AgentConnectSettings> for Session {
     fn from(settings: &AgentConnectSettings) -> Self {
-        let mut room_options = RoomOptions::default();
-        room_options.encryption = e2ee_options(settings.e2ee_key.as_deref());
-        let session_options = SessionOptions::default()
-            .with_agent_connect_timeout(settings.agent_connect_timeout)
-            .with_room_options(room_options)
-            .with_platform_audio(settings.voice);
+        let session_options = SessionOptions::from(&settings.call);
         match settings.auth.clone() {
             Auth::Token { url, token } => Session::new(literal(url, token), session_options),
             Auth::ApiKey(token_source) => Session::new(token_source, session_options),

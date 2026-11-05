@@ -3,14 +3,17 @@ use livekit::e2ee::{
     E2eeOptions, EncryptionType,
     key_provider::{KeyProvider, KeyProviderOptions},
 };
+use livekit_thread::{SessionOptions, ThreadDirectoryOptions};
 use livekit_token_source::{
     TokenSourceConfigurable, TokenSourceFetchOptions, TokenSourceFixed, development_token_server,
 };
 use std::time::Duration;
 
 mod agent;
+mod thread;
 
-pub use agent::{AgentConnectSettings, LocalTokenSource};
+pub use agent::{AgentConnectSettings, CallSettings, LocalTokenSource};
+pub use thread::ThreadConnectSettings;
 
 /// How a room or agent connection is authenticated. The methods that target a
 /// known server carry its URL; the token-source method learns it from the
@@ -109,9 +112,11 @@ pub fn e2ee_options(key: Option<&str>) -> Option<E2eeOptions> {
 pub enum ConnectRequest {
     Room(ConnectSettings),
     Agent(AgentConnectSettings),
+    Thread(ThreadConnectSettings),
 }
 
-/// Whether the connect form joins a room directly or starts an agent session.
+/// Whether the connect form joins a room directly, starts an agent session, or
+/// browses agent threads.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
 )]
@@ -119,6 +124,7 @@ enum ConnectMode {
     #[default]
     Room,
     Agent,
+    Thread,
 }
 
 /// Which authentication method the connect form is editing.
@@ -210,6 +216,8 @@ pub struct ConnectView {
     api_secret: String,
     identity: String,
     room: String,
+    /// The agent's text endpoint, for threads.
+    endpoint: String,
     key: String,
     auto_subscribe: bool,
     dynacast: bool,
@@ -242,6 +250,7 @@ impl Default for ConnectView {
             api_secret: env_or("LIVEKIT_API_SECRET", "secret"),
             identity: "participant-0".to_string(),
             room: "dev-room".to_string(),
+            endpoint: "frontend".to_string(),
             key: String::new(),
             auto_subscribe: true,
             dynacast: true,
@@ -254,18 +263,33 @@ impl Default for ConnectView {
 }
 
 impl ConnectView {
+    /// The selected method; threads only support API credentials.
+    fn method(&self) -> AuthMethod {
+        match self.mode {
+            ConnectMode::Thread => AuthMethod::ApiKey,
+            ConnectMode::Room | ConnectMode::Agent => self.method,
+        }
+    }
+
     fn is_connect_enabled(&self) -> bool {
         let filled = |s: &str| !s.trim().is_empty();
         // The URL only matters for the methods that use it; the token-source
         // method gets its server URL from the development token server response.
-        // Agent sessions never name a room.
-        match self.method {
+        // Agent sessions and threads never name a room.
+        match self.method() {
             AuthMethod::ApiKey => {
+                let target = match self.mode {
+                    ConnectMode::Room => filled(&self.room),
+                    ConnectMode::Agent => true,
+                    ConnectMode::Thread => {
+                        filled(&self.endpoint) && filled(&self.token_source_options.agent_name)
+                    }
+                };
                 filled(&self.url)
                     && filled(&self.api_key)
                     && filled(&self.api_secret)
                     && filled(&self.identity)
-                    && (self.mode == ConnectMode::Agent || filled(&self.room))
+                    && target
             }
             AuthMethod::Token => filled(&self.url) && filled(&self.token),
             AuthMethod::DevelopmentTokenServer => filled(&self.token_server_id),
@@ -276,6 +300,7 @@ impl ConnectView {
         match self.mode {
             ConnectMode::Room => ConnectRequest::Room(self.room_settings()),
             ConnectMode::Agent => ConnectRequest::Agent(self.agent_settings()),
+            ConnectMode::Thread => ConnectRequest::Thread(self.thread_settings()),
         }
     }
 
@@ -296,7 +321,7 @@ impl ConnectView {
 
     /// The selected method's credentials, for the selected mode.
     fn auth(&self) -> Auth {
-        match self.method {
+        match self.method() {
             AuthMethod::ApiKey => Auth::ApiKey(self.local_token_source()),
             AuthMethod::Token => Auth::Token {
                 url: self.url.clone(),
@@ -306,7 +331,9 @@ impl ConnectView {
                 token_server_id: self.token_server_id.clone(),
                 options: match self.mode {
                     ConnectMode::Room => TokenSourceFetchOptions::from(&self.token_source_options),
-                    ConnectMode::Agent => self.token_source_options.for_agent(),
+                    ConnectMode::Agent | ConnectMode::Thread => {
+                        self.token_source_options.for_agent()
+                    }
                 },
             },
         }
@@ -325,12 +352,36 @@ impl ConnectView {
         }
     }
 
-    fn agent_settings(&self) -> AgentConnectSettings {
-        AgentConnectSettings {
-            auth: self.auth(),
+    fn call_settings(&self) -> CallSettings {
+        CallSettings {
             e2ee_key: self.e2ee_key(),
             voice: self.voice,
             agent_connect_timeout: Duration::from_secs(self.agent_connect_timeout_secs),
+        }
+    }
+
+    fn agent_settings(&self) -> AgentConnectSettings {
+        AgentConnectSettings {
+            auth: self.auth(),
+            call: self.call_settings(),
+        }
+    }
+
+    /// The identity is the threads' scope: the user who owns them.
+    fn thread_settings(&self) -> ThreadConnectSettings {
+        let options = &self.token_source_options;
+        let deployment = options.agent_deployment.trim();
+        ThreadConnectSettings {
+            url: self.url.clone(),
+            api_key: self.api_key.clone(),
+            api_secret: self.api_secret.clone(),
+            directory: ThreadDirectoryOptions {
+                agent_name: options.agent_name.trim().to_string(),
+                endpoint: self.endpoint.trim().to_string(),
+                scope: self.identity.trim().to_string(),
+                deployment: (!deployment.is_empty()).then(|| deployment.to_string()),
+                call_options: SessionOptions::from(&self.call_settings()),
+            },
         }
     }
 
@@ -376,8 +427,9 @@ impl ConnectView {
                     ui.add(ProminentButton::new("Connect").enabled(self.is_connect_enabled()));
                 if connect.clicked() {
                     request = Some(self.current_request());
-                    // Agent sessions get a new room each time, so only a room
-                    // join needs a fresh identity.
+                    // Agent sessions get a new room each time, and the identity
+                    // is the threads' scope, so only a room join needs a fresh
+                    // identity.
                     if self.mode == ConnectMode::Room && self.method == AuthMethod::ApiKey {
                         self.bump_identity();
                     }
@@ -392,7 +444,7 @@ impl ConnectView {
     }
 }
 
-/// The connect form: a room / agent mode selector, an auth-method tab selector,
+/// The connect form: a room / agent / thread mode selector, an auth-method tab selector,
 /// the active method's fields, and the mode's options. The Connect button lives
 /// in the connect screen's bottom panel, so this widget only edits the borrowed view.
 struct ConnectForm<'a> {
@@ -407,6 +459,7 @@ impl egui::Widget for ConnectForm<'_> {
                 for (mode, label) in [
                     (ConnectMode::Room, "Connect to a Room"),
                     (ConnectMode::Agent, "Connect to an Agent"),
+                    (ConnectMode::Thread, "Threads"),
                 ] {
                     let text = egui::RichText::new(label).text_style(egui::TextStyle::Heading);
                     ui.selectable_value(&mut view.mode, mode, text);
@@ -418,22 +471,12 @@ impl egui::Widget for ConnectForm<'_> {
             let mode = view.mode;
             let method = &mut view.method;
             ui.horizontal(|ui| {
-                ui.selectable_value(method, AuthMethod::ApiKey, "API Key")
-                    .on_hover_text(match mode {
-                        ConnectMode::Room => "Generate a join token from API credentials",
-                        ConnectMode::Agent => {
-                            "Generate a token dispatching the agent into a new room"
-                        }
-                    });
-                ui.selectable_value(method, AuthMethod::Token, "Token")
-                    .on_hover_text(match mode {
-                        ConnectMode::Room => "Join with a pre-generated token",
-                        ConnectMode::Agent => {
-                            "Join with a pre-generated token that dispatches the agent"
-                        }
-                    });
-                ui.selectable_value(method, AuthMethod::DevelopmentTokenServer, "TokenSource")
-                    .on_hover_text("Fetch credentials from a development token server");
+                if mode == ConnectMode::Thread {
+                    ui.add(egui::Button::selectable(true, "API Key"))
+                        .on_hover_text("Threads sign their tokens locally with API credentials");
+                } else {
+                    method_tabs(ui, method, mode);
+                }
                 egui::Aligned::new(egui::Align2::RIGHT_CENTER)
                     .id_salt("secrets_toggle")
                     .show(ui, |ui| {
@@ -458,7 +501,7 @@ impl egui::Widget for ConnectForm<'_> {
             // passes" warning flags. A stable salt keeps the id constant.
             // The URL lives inside the Token / API Key tabs (shared between
             // them): the token-source method gets its URL from the development token server.
-            ui.push_id("auth_method_fields", |ui| match view.method {
+            ui.push_id("auth_method_fields", |ui| match view.method() {
                 AuthMethod::Token => {
                     token_fields(ui, view, mask);
                 }
@@ -483,7 +526,7 @@ impl egui::Widget for ConnectForm<'_> {
                     ui.checkbox(&mut view.auto_subscribe, "Auto Subscribe");
                     ui.checkbox(&mut view.dynacast, "Dynacast");
                 }
-                ConnectMode::Agent => {
+                ConnectMode::Agent | ConnectMode::Thread => {
                     ui.checkbox(&mut view.voice, "Voice").on_hover_text(
                         "Capture the microphone and play the agent's audio through the \
                          platform's audio devices; uncheck to talk by text only",
@@ -510,6 +553,25 @@ impl egui::Widget for ConnectForm<'_> {
     }
 }
 
+/// The Room and Agent modes' auth-method tabs.
+fn method_tabs(ui: &mut egui::Ui, method: &mut AuthMethod, mode: ConnectMode) {
+    let agent = mode != ConnectMode::Room;
+    ui.selectable_value(method, AuthMethod::ApiKey, "API Key")
+        .on_hover_text(if agent {
+            "Generate a token dispatching the agent into a new room"
+        } else {
+            "Generate a join token from API credentials"
+        });
+    ui.selectable_value(method, AuthMethod::Token, "Token")
+        .on_hover_text(if agent {
+            "Join with a pre-generated token that dispatches the agent"
+        } else {
+            "Join with a pre-generated token"
+        });
+    ui.selectable_value(method, AuthMethod::DevelopmentTokenServer, "TokenSource")
+        .on_hover_text("Fetch credentials from a development token server");
+}
+
 fn token_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool) {
     ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
     ui.add_space(8.0);
@@ -517,8 +579,10 @@ fn token_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool) {
     ui.add_space(8.0);
 }
 
-/// The API credentials, identity, room, and the agent to dispatch.
+/// The API credentials, identity, room, and the agent to dispatch. Threads
+/// take the agent's text endpoint in place of the room.
 fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: ConnectMode) {
+    let threads = mode == ConnectMode::Thread;
     ui.add(LabeledTextEdit::singleline("URL", &mut view.url));
     ui.add_space(8.0);
     ui.columns(2, |columns| {
@@ -528,13 +592,23 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
     });
     ui.add_space(8.0);
     ui.columns(2, |columns| {
-        columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
-        columns[1]
-            .add(
-                LabeledTextEdit::singleline("Room", &mut view.room)
-                    .enabled(mode == ConnectMode::Room),
-            )
-            .on_disabled_hover_text(NEW_ROOM_HINT);
+        let identity = columns[0].add(LabeledTextEdit::singleline("Identity", &mut view.identity));
+        if threads {
+            identity.on_hover_text(
+                "The scope of the threads: they are listed and created for this identity, \
+                 which is also yours in a call",
+            );
+            columns[1]
+                .add(LabeledTextEdit::singleline("Endpoint", &mut view.endpoint))
+                .on_hover_text("The agent's public text endpoint that messages go to");
+        } else {
+            columns[1]
+                .add(
+                    LabeledTextEdit::singleline("Room", &mut view.room)
+                        .enabled(mode == ConnectMode::Room),
+                )
+                .on_disabled_hover_text(NEW_ROOM_HINT);
+        }
     });
     ui.add_space(8.0);
     let options = &mut view.token_source_options;
@@ -544,10 +618,12 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
                 "Agent Name",
                 &mut options.agent_name,
             ))
-            .on_hover_text(
+            .on_hover_text(if threads {
+                "The agent that answers the threads; required"
+            } else {
                 "Dispatched when the room is created, for room joins as well as agent \
-                 sessions; leave empty to rely on automatic agent dispatch",
-            );
+                 sessions; leave empty to rely on automatic agent dispatch"
+            });
         columns[1]
             .add(LabeledTextEdit::singleline(
                 "Agent Deployment",
@@ -559,10 +635,11 @@ fn api_key_fields(ui: &mut egui::Ui, view: &mut ConnectView, mask: bool, mode: C
             );
     });
     ui.add_space(8.0);
-    ui.add(LabeledTextEdit::singleline(
-        "Agent Metadata",
-        &mut options.agent_metadata,
-    ));
+    ui.add(
+        LabeledTextEdit::singleline("Agent Metadata", &mut options.agent_metadata)
+            .enabled(!threads),
+    )
+    .on_disabled_hover_text("A thread's call sets the dispatch metadata to the thread id");
     ui.add_space(8.0);
 }
 

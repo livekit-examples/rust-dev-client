@@ -1,6 +1,7 @@
 use crate::agent::AgentWindow;
 use crate::connect::{ConnectRequest, ConnectView};
 use crate::room::RoomWindow;
+use crate::threads::ThreadsWindow;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +12,7 @@ mod media;
 mod room;
 mod service;
 mod style;
+mod threads;
 mod ui;
 mod utils;
 
@@ -24,6 +26,7 @@ enum AppWindow {
     // Both are large; boxed so the enum stays small.
     Room(Box<RoomWindow>),
     Agent(Box<AgentWindow>),
+    Thread(Box<ThreadsWindow>),
 }
 
 impl AppWindow {
@@ -31,6 +34,7 @@ impl AppWindow {
         match self {
             AppWindow::Room(window) => window.ui(ui),
             AppWindow::Agent(window) => window.ui(ui),
+            AppWindow::Thread(window) => window.ui(ui),
         }
     }
 
@@ -38,11 +42,12 @@ impl AppWindow {
         match self {
             AppWindow::Room(window) => window.disconnect(),
             AppWindow::Agent(window) => window.disconnect(),
+            AppWindow::Thread(window) => window.disconnect(),
         }
     }
 }
 
-/// A room or agent window, shown as a deferred viewport so it repaints
+/// A room, agent or threads window, shown as a deferred viewport so it repaints
 /// independently of the connect screen and of other windows.
 struct WindowEntry {
     id: u64,
@@ -102,6 +107,14 @@ impl AppRoot {
             ConnectRequest::Agent(settings) => (
                 format!("{} - Agent - {}", APP_NAME, settings.auth.target_label()),
                 AppWindow::Agent(Box::new(AgentWindow::new(runtime, render_state, &settings))),
+            ),
+            ConnectRequest::Thread(settings) => (
+                format!("{} - Threads - {}", APP_NAME, settings.directory.agent_name),
+                AppWindow::Thread(Box::new(ThreadsWindow::new(
+                    runtime,
+                    render_state,
+                    settings,
+                ))),
             ),
         };
 

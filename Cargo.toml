@@ -6,6 +6,7 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1"
+chrono = "0.4"
 eframe = { version = "0.37.0", features = ["default_fonts", "wgpu", "persistence"] }
 egui = "0.37.0"
 egui-wgpu = "0.37.0"
@@ -25,6 +26,7 @@ winit = { version = "0.30.13", features = [ "android-native-activity" ] }
 # livekit-capture = { version = "0.1.8", default-features = false, features = ["source-pattern", "source-clock"] }
 # livekit-protocol = "0.8.2"
 # livekit-session = { version = "0.1.0", features = ["rustls-tls-native-roots"] }
+# livekit-thread = { version = "0.1.0", features = ["rustls-tls-native-roots"] }
 
 # Building against a local rust-sdks checkout (see "Building against a local
 # rust-sdks" in README.md). To build against the released crates instead,
@@ -35,6 +37,7 @@ livekit-token-source = { path = "../rust-sdks/livekit-token-source", features = 
 livekit-capture = { path = "../rust-sdks/livekit-capture", default-features = false, features = ["source-pattern", "source-clock"] }
 livekit-protocol = { path = "../rust-sdks/livekit-protocol" }
 livekit-session = { path = "../rust-sdks/livekit-session", features = ["rustls-tls-native-roots"] }
+livekit-thread = { path = "../rust-sdks/livekit-thread", features = ["rustls-tls-native-roots"] }
 
 [package.metadata.bundle]
 name = "LiveKit Client"

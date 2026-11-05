@@ -3,6 +3,8 @@
 //! reusable toolkit in [`crate::ui`] and reuses the participants panel and
 //! status bar from [`crate::room`].
 
+pub mod avatar_panel;
+pub mod feed;
 pub mod service;
 pub mod window;
 

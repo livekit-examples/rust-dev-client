@@ -1,23 +1,15 @@
 use crate::{
+    agent::avatar_panel::AvatarPanel,
+    agent::feed::MessageFeed,
     agent::service::{AgentCmd, AgentEvent, AgentService},
     connect::AgentConnectSettings,
     media::VideoRenderer,
     room::participants::ParticipantsPanel,
     room::status_bar::{StatusBar, StatusBarActions},
-    ui::{
-        chat_message::ChatMessage,
-        placeholder_tile::{PlaceholderTile, placeholder_texture},
-        status_badge::StatusBadge,
-        video_tile::{VideoTile, fit_size},
-    },
+    ui::{chat_composer::ChatComposer, status_badge::StatusBadge},
 };
-use livekit_session::{AgentActivity, AgentFailure, AgentState, Message, MessageOrigin};
+use livekit_session::{AgentActivity, AgentFailure, AgentState, Message};
 use std::collections::BTreeMap;
-
-/// Share of the panel height the avatar may take; the feed gets the rest.
-const AVATAR_HEIGHT_FRACTION: f32 = 0.4;
-const AVATAR_OVERLAY_MARGIN: f32 = 5.0;
-const SEND_BUTTON_WIDTH: f32 = 60.0;
 
 /// State and UI of a single agent session window. The session starts
 /// immediately on creation with the settings handed over by the connect screen.
@@ -132,26 +124,12 @@ impl AgentWindow {
             .show(ui, |ui| self.composer(ui, state.connection.is_connected()));
 
         egui::CentralPanel::default().show(ui, |ui| {
-            self.agent_panel(ui, state.agent);
+            ui.add(AvatarPanel {
+                state: state.agent,
+                avatar: self.avatar.as_ref(),
+            });
             ui.separator();
-
-            egui::ScrollArea::vertical()
-                .id_salt("agent_feed")
-                .stick_to_bottom(true)
-                .auto_shrink(false)
-                .show(ui, |ui| {
-                    if self.messages.is_empty() {
-                        ui.weak("No messages yet");
-                    }
-                    for message in self.messages.values() {
-                        ui.add(
-                            ChatMessage::new(speaker(message), &message.text)
-                                .local(is_local(message))
-                                .pending(!message.is_final),
-                        );
-                        ui.add_space(4.0);
-                    }
-                });
+            ui.add(MessageFeed::new(&self.messages, "agent"));
         });
 
         if actions.disconnect {
@@ -163,78 +141,22 @@ impl AgentWindow {
         ui.ctx().request_repaint();
     }
 
-    /// The agent's avatar (or placeholder once it joined) with its state on top;
-    /// before that, only the state. The avatar keeps its aspect ratio: it is
-    /// scaled to fit the panel width and a share of its height, and centered.
-    fn agent_panel(&self, ui: &mut egui::Ui, state: AgentState) {
-        let bounds = egui::vec2(
-            ui.available_width(),
-            ui.available_height() * AVATAR_HEIGHT_FRACTION,
-        );
-        if !has_joined(state) {
-            let (rect, _) = ui.allocate_exact_size(bounds, egui::Sense::hover());
-            ui.painter().rect_filled(
-                rect.shrink(1.0),
-                egui::CornerRadius::default(),
-                ui.style().visuals.code_bg_color,
-            );
-            ui.place(rect, StatusBadge::from(state));
-            return;
-        }
-
-        let speaking = state == AgentState::Connected(AgentActivity::Speaking);
-        let texture = self.avatar.as_ref().and_then(VideoRenderer::texture);
-        let size = texture.map_or(bounds, |texture| fit_size(bounds, texture.size));
-        let (row, _) = ui.allocate_exact_size(egui::vec2(bounds.x, size.y), egui::Sense::hover());
-        let rect = egui::Rect::from_center_size(row.center(), size);
-        if self.avatar.is_some() {
-            ui.place(rect, VideoTile::new(texture, "Avatar", speaking));
-        } else {
-            let placeholder = placeholder_texture(ui.ctx());
-            ui.place(
-                rect,
-                PlaceholderTile::new(placeholder.id(), "Agent", speaking),
-            );
-        }
-        ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect.shrink(AVATAR_OVERLAY_MARGIN))
-                .layout(egui::Layout::top_down(egui::Align::Min)),
-        )
-        .add(StatusBadge::from(state));
-    }
-
     /// The text input with Enter-to-send, and the last send failure.
     fn composer(&mut self, ui: &mut egui::Ui, connected: bool) {
-        ui.horizontal(|ui| {
-            let width = ui.available_width() - SEND_BUTTON_WIDTH - ui.spacing().item_spacing.x;
-            let edit = ui.add_enabled(
-                connected,
-                egui::TextEdit::singleline(&mut self.draft)
-                    .hint_text("Message the agent")
-                    .desired_width(width),
-            );
-            let submitted = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            let has_text = !self.draft.trim().is_empty();
-            let send = egui::Button::new("Send").min_size(egui::vec2(SEND_BUTTON_WIDTH, 0.0));
-            let clicked = ui.add_enabled(connected && has_text, send).clicked();
-            if (submitted || clicked) && has_text {
-                let text = self.draft.trim().to_owned();
-                self.draft.clear();
-                self.send_failure = None;
-                self.service.send(AgentCmd::SendText(text));
-                edit.request_focus();
-            }
-        });
+        let mut submitted = None;
+        ui.add(
+            ChatComposer::new(&mut self.draft, &mut submitted)
+                .enabled(connected)
+                .hint_text("Message the agent"),
+        );
+        if let Some(text) = submitted {
+            self.send_failure = None;
+            self.service.send(AgentCmd::SendText(text));
+        }
         if let Some(err) = &self.send_failure {
             ui.add(StatusBadge::error(format!("Failed to send: {err}")));
         }
     }
-}
-
-/// Whether an agent participant is in the room.
-fn has_joined(state: AgentState) -> bool {
-    matches!(state, AgentState::Connected(_))
 }
 
 impl From<AgentState> for StatusBadge {
@@ -263,20 +185,4 @@ impl From<AgentActivity> for StatusBadge {
             activity => StatusBadge::neutral(format!("Agent {activity:?}")),
         }
     }
-}
-
-fn speaker(message: &Message) -> &str {
-    match message.origin {
-        MessageOrigin::AgentTranscript => "Agent",
-        MessageOrigin::UserTranscript => "You (transcribed)",
-        MessageOrigin::UserInput => "You",
-        _ => message.participant_identity.as_str(),
-    }
-}
-
-fn is_local(message: &Message) -> bool {
-    matches!(
-        message.origin,
-        MessageOrigin::UserTranscript | MessageOrigin::UserInput
-    )
 }
