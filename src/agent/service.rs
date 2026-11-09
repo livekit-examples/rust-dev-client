@@ -1,7 +1,7 @@
 use crate::connect::AgentConnectSettings;
 use crate::room::participants::{TrackCmd, TrackCommands};
 use livekit::prelude::*;
-use livekit_session::{Message, Session, SessionConnectionState, SessionEvent, SessionState};
+use livekit_session::{Message, Session, SessionEvent, SessionState};
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
@@ -43,7 +43,6 @@ impl AgentService {
         let actor = AgentActor {
             session: session.clone(),
             ui_tx,
-            room_events: None,
             avatar_sid: None,
         };
         runtime.spawn(actor.run(cmd_rx));
@@ -82,7 +81,6 @@ impl TrackCommands for AgentService {
 enum Input {
     Cmd(Option<AgentCmd>),
     Feed(SessionEvent),
-    Room(RoomEvent),
     StateChanged,
 }
 
@@ -92,8 +90,6 @@ enum Input {
 struct AgentActor {
     session: Session,
     ui_tx: mpsc::UnboundedSender<AgentEvent>,
-    /// The connected room's events, `None` while there is no room.
-    room_events: Option<mpsc::UnboundedReceiver<RoomEvent>>,
     avatar_sid: Option<TrackSid>,
 }
 
@@ -106,7 +102,6 @@ impl AgentActor {
             let input = tokio::select! {
                 cmd = cmd_rx.recv() => Input::Cmd(cmd),
                 Some(event) = feed.recv() => Input::Feed(event),
-                Some(event) = recv_room_event(&mut self.room_events) => Input::Room(event),
                 Ok(()) = state.changed() => Input::StateChanged,
             };
             match input {
@@ -118,14 +113,9 @@ impl AgentActor {
                 // Only `MessagesRestored`, which follows `Session::restore_messages`;
                 // this client never restores a feed.
                 Input::Feed(_) => {}
-                Input::Room(event) => self.on_room_event(event),
                 Input::StateChanged => {
-                    let connection = state.borrow_and_update().connection;
-                    if connection == SessionConnectionState::Disconnected
-                        && self.room_events.is_some()
-                    {
-                        self.release();
-                    }
+                    let has_avatar = state.borrow_and_update().agent_tracks.avatar_video;
+                    self.refresh_avatar(has_avatar);
                 }
             }
         }
@@ -136,10 +126,7 @@ impl AgentActor {
     async fn handle(&mut self, cmd: AgentCmd) {
         match cmd {
             AgentCmd::Start => self.start().await,
-            AgentCmd::End => {
-                self.session.end().await;
-                self.release();
-            }
+            AgentCmd::End => self.session.end().await,
             AgentCmd::SendText(text) => {
                 if let Err(err) = self.session.send_text(&text).await {
                     self.emit(AgentEvent::SendFailed(err.to_string()));
@@ -162,35 +149,15 @@ impl AgentActor {
             return;
         };
         log::info!("agent session connected to room: {}", room.name());
-
-        self.room_events = Some(room.subscribe());
         self.emit(AgentEvent::StartResult(Ok(())));
-        self.refresh_avatar();
     }
 
-    /// Drops what belonged to the room once it is gone.
-    fn release(&mut self) {
-        self.room_events = None;
-        self.refresh_avatar();
-    }
-
-    fn on_room_event(&mut self, event: RoomEvent) {
-        if matches!(
-            event,
-            RoomEvent::TrackSubscribed { .. }
-                | RoomEvent::TrackUnsubscribed { .. }
-                | RoomEvent::ParticipantDisconnected(_)
-        ) {
-            self.refresh_avatar();
-        }
-    }
-
-    /// Reports the avatar's video track when it changes.
-    fn refresh_avatar(&mut self) {
-        let track = self
-            .room_events
-            .as_ref()
-            .and_then(|_| self.session.agent_avatar_video_track());
+    /// Reports the avatar's video track when it changes. Compared by sid, as a
+    /// replaced track can leave the flag set.
+    fn refresh_avatar(&mut self, has_avatar: bool) {
+        let track = has_avatar
+            .then(|| self.session.agent_avatar_video_track())
+            .flatten();
         let sid = track.as_ref().map(|track| track.sid());
         if sid != self.avatar_sid {
             self.avatar_sid = sid;
@@ -200,15 +167,5 @@ impl AgentActor {
 
     fn emit(&self, event: AgentEvent) {
         let _ = self.ui_tx.send(event);
-    }
-}
-
-/// The next event of the connected room; pending while there is none.
-async fn recv_room_event(
-    room_events: &mut Option<mpsc::UnboundedReceiver<RoomEvent>>,
-) -> Option<RoomEvent> {
-    match room_events {
-        Some(events) => events.recv().await,
-        None => std::future::pending().await,
     }
 }
